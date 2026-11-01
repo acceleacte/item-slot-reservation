@@ -93,7 +93,8 @@ player.components.isr_slotmarkstore = MarkStore(player)
 player.components.isr_slotmarkstore:SetMark(3, "cutgrass", 5)
 player.components.isr_slotmarkstore:SetMark(4, "twigs", 2)
 
-ISR.GetPersonalStorageInstances = function() return { player } end
+ISR.GetMarkContainerInstances = function() return { player } end
+ISR.IsStorageOwnedByPlayer = function(_, inst) return inst == player end
 ISR.GetSlotMarkStoreForGUID = function(_, guid)
     return guid == player.GUID and player.components.isr_slotmarkstore or nil
 end

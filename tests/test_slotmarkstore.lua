@@ -55,3 +55,15 @@ assert_equal(legacy:GetMark(2), nil, "legacy equipment-slot mark is dropped")
 assert_equal(restored:ClearMark(2), true, "existing mark clears")
 assert_equal(restored:ClearMark(2), false, "missing mark does not report a clear")
 assert_equal(restored:OnSave(), nil, "cleared store writes no save data")
+
+-- 归属（切斯特没眼骨时判不出归属，靠这个字段记住是谁的）
+local owned = SlotMarkStore({ GUID = 13 })
+owned:SetMark(1, "twigs", 1)
+owned:SetOwner("KU_abc")
+local owned_data = owned:OnSave()
+assert_equal(owned_data.owner, "KU_abc", "owner is serialized with the marks")
+
+local owned_reloaded = SlotMarkStore({ GUID = 14 })
+owned_reloaded:OnLoad(owned_data)
+assert_equal(owned_reloaded:GetOwner(), "KU_abc", "owner is restored on load")
+assert_equal(owned_reloaded:GetMark(1).prefab, "twigs", "marks and owner load together")

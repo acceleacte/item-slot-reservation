@@ -83,6 +83,23 @@ ISR.ValidPinKeyOptions =
     NONE = true,
 }
 
+-- 自动落进容器的距离上限（世界单位，4 = 一格地皮）。
+-- 玩家身上的容器不受限制；世界里的容器按这个距离算，免得站在地图另一头
+-- 也能把东西直接送进基地箱子。
+ISR.ContainerRangeLimits =
+{
+    near = 10,
+    medium = 24,
+    far = 48,
+}
+
+ISR.ValidContainerRangeOptions =
+{
+    near = true,
+    medium = true,
+    far = true,
+}
+
 function ISR.NormalizeConfigValue(value, valid_choices, default)
     if valid_choices[value] then
         return value

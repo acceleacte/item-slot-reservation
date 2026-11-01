@@ -1,5 +1,12 @@
 ISR = ISR or {}
 
+-- 读档时原版会用存档槽位号调 GiveItem（Inventory:OnLoad / Container:OnLoad）。
+-- 那是恢复既有数据，不是玩家往标记格里塞别的物品，期间不能清标记。
+local function IsStorageLoading(storage)
+    return storage ~= nil
+        and (storage.isloading == true or storage._isr_loading == true)
+end
+
 function ISR.TryGiveItemToContainer(inventory, item, container, slot, src_pos)
     if not ISR.CanUseContainerSlot(container, item, slot) then
         return false
@@ -193,7 +200,7 @@ AddPlayerInventoryPostInit(function(self)
                 landed_slot = result
             end
 
-            if landed_slot ~= nil then
+            if landed_slot ~= nil and not IsStorageLoading(self) then
                 ISR.ClearServerSlotMarkIfItemMismatches(self.inst, self.inst.GUID, landed_slot, inst)
             end
         end
@@ -245,7 +252,7 @@ AddComponentPostInit("container", function(self)
         end
 
         local result = old_GiveItem(self, item, slot, src_pos, drop_on_fail)
-        if slot ~= nil and result then
+        if slot ~= nil and result and not IsStorageLoading(self) then
             ISR.ClearServerSlotMarkIfItemMismatches(owner, container_guid, slot, item)
         end
         return result

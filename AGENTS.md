@@ -9,7 +9,7 @@
 | 项 | 值 |
 |---|---|
 | 模组名 | Item Slot Reservation |
-| 版本 | 0.1.3（`modinfo.lua`） |
+| 版本 | 0.1.4（`modinfo.lua`） |
 | 类型 | 服务器模组，`all_clients_require_mod = true`（2026-10-31 由 false 改来，见 §9.5），`client_only_mod = false` |
 | `api_version` | 10 |
 | 全局表 | `ISR`（同时挂到 `GLOBAL.ISR`） |
@@ -21,27 +21,27 @@
 
 ---
 
-## 2. 文件结构（3323 行 Lua，22 个测试）
+## 2. 文件结构（4001 行 Lua，29 个测试）
 
 ```
 modmain.lua                 19 行，13 个 modimport，顺序有依赖（env → config → icons → storage → markstores → slotmarks → placement → candidates → debug → persistence → inventoryhooks → clientpredict → uihooks）
-modinfo.lua                104 行，配置项 + 双语文案
+modinfo.lua                117 行，配置项 + 双语文案
 scripts/
-  isr_env.lua              227  GLOBAL 取值兜底、按键码归一化、点击意图、prefab 键工具、i18n
-  isr_config.lua            21  读 GetModConfigData（pin_key / icon_opacity / debug_log）
+  isr_env.lua              244  GLOBAL 取值兜底、按键码归一化、点击意图、prefab 键工具、距离档位、i18n
+  isr_config.lua            27  读 GetModConfigData（pin_key / icon_opacity / debug_log / pickup_to_container / container_range）
   isr_icons.lua            202  空格物品图标 + 木框渲染
-  isr_storage.lua          281  存储适配器注册表 + inventory/container 两个内置适配器
-  isr_markstores.lua        88  组件挂载、按 GUID 找 store、个人容器实例枚举
-  isr_slotmarks.lua        437  服务端标记 CRUD、匹配判定、客户端缓存、5 个 RPC handler
-  isr_placement.lua        128  放置路由决策、transfer 上下文栈
+  isr_storage.lua          472  存储适配器注册表 + 内置适配器 + 容器归属判定 + 作用距离
+  isr_markstores.lua       153  组件挂载、按 GUID 找 store、标记容器注册表、随身实例递归枚举
+  isr_slotmarks.lua        490  服务端标记 CRUD、匹配判定、客户端缓存、拾取音效、5 个 RPC handler
+  isr_placement.lua        198  放置路由决策、标记优先级（容器 / 物品栏）、距离过滤、transfer 上下文栈
   isr_candidates.lua       521  候选格搜索（堆叠/溢出/专用容器优先）
   isr_debug.lua            106  自检 + 控制台标记入口
-  isr_persistence.lua      170  客户端能力白名单、全量同步、旧开发版存档迁移
-  isr_inventoryhooks.lua   339  GiveItem / GetNextAvailableSlot / Shift 转移 hook
+  isr_persistence.lua      390  客户端能力白名单、全量同步、旧开发版存档迁移、玩家级标记备份（含嵌套路径）
+  isr_inventoryhooks.lua   346  GiveItem / GetNextAvailableSlot / Shift 转移 hook
   isr_clientpredict.lua    326  客户端落点预测（标记先行判落点 → 背包预测 / 守卫窗口）
   isr_uihooks.lua          348  invslot / inventorybar / containerwidget 的 UI hook
-  components/isr_slotmarkstore.lua  110  标记存储组件（OnSave/OnLoad）
-tests/                      22 个 lua 测试 + run_lua_tests.py
+  components/isr_slotmarkstore.lua  159  标记存储组件（OnSave/OnLoad、add_component_if_missing、owner、注册表登记）
+tests/                      29 个 lua 测试 + run_lua_tests.py
 images/                     modicon + wood_frame_128_ARGB（木框贴图）
 ```
 
@@ -166,6 +166,64 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 日志（`debug_log=true`）：`Client predict overflow` / `Client predict overflow busy` / `Client predict dropped` / `Client predict blocked ... allowed ... rejected ...` / `Client predict end ... remainder ...`。
 
+### 3.8 可标记容器的范围（组件语义判定，不枚举 prefab）
+
+能标记的只有「属于这名玩家的容器」。判定**只看组件语义**，不维护 prefab 名单 —— 新的容器、别的模组的容器、跟随型容器都不用逐个登记：
+
+| 归属 | 判定 |
+|---|---|
+| **容器上记过的 owner**（最先判） | `SlotMarkStore:GetOwner()` 存 userid，随存档走。切斯特没眼骨时不跟随任何人，组件语义判不出来，就靠这个字段。有 owner 时**直接以它为准**，不再看后面的规则 —— 眼骨转手给朋友，标记仍归原主 |
+| 玩家自己 | `inst == player` |
+| 物品类容器（背包、桶、箱子） | `inventoryitem:GetGrandOwner()` 沿 owner 链找终点，终点再按下一行判归属。背包丢地上时链断在 nil，自动排除 |
+| 跟随型容器（切斯特、哈奇、Woby） | `follower:GetLeader() == player` |
+| 骑乘中的载具 | `rideable.rider == player` |
+
+实现在 `isr_storage.lua`：`ISR.IsEntityOwnedByPlayer`（实体归属）、`ISR.IsStorageOwnedByPlayer`（容器归属，owner 字段优先，其次 owner 链，最后实体本身）、`ISR.IsMarkableContainerForPlayer`（RPC 入口）。
+
+**第一次落标记的放行条件比归属宽**：`set_slot_mark` 的 RPC 里，除了归属判定，**容器此刻正被这名玩家打开**（`container:IsOpenedBy(player)`）也直接放行（`isr_slotmarks.lua`）。切斯特没眼骨时 `follower:GetLeader()` 是 nil，只有这条能让它可标记。放行之后写入 owner，之后别人再打开也改不了（`reason = "owner"` 拒绝）。
+
+**枚举走注册表，不走「玩家身上有什么」**：`isr_markstores.lua` 的 `ISR._mark_containers`（GUID → 实体）。`SlotMarkStore:SetMark` 与 `OnLoad` 时登记，`ClearMark` 清空后与 `OnRemoveFromEntity` 时注销，`GetMarkContainerInstances` 顺手清理失效实体。`ISR.GetServerMarks` 遍历注册表 + 归属过滤 —— 这样切斯特这类**不在玩家物品栏里**的容器也能算进同步、自动回位与匹配判定。
+
+客户端判定（`ISR.IsClientMarkableContainerInst`）分三段，任一段通过即放行：
+
+1. `replica.follower:GetLeader() == player`（跟随容器）；
+2. 物品栏/装备栏一层 + `replica.container:GetItemInSlot` 往下扫一层（容器树，靠 classified，只有打开过的容器有数据）；
+3. **兜底**：`replica.container:GetNumSlots() > 0` 就放行，交给服务端裁决 —— `inventoryitem` 的 replica 不带 owner，客户端拼不出完整归属链（切斯特身上的背包就是这种情况），服务端拒绝时会 `SyncAuthoritativeSlotMark` 回推真实状态。
+
+深度上限 `ISR.PERSONAL_STORAGE_DEPTH = 3`：玩家(1) → 物品栏容器(2) → 容器里的容器(3)。`GetPersonalStorageInstances`（备份路径用）按这个上限递归，带 `seen` 防环。
+
+备份路径支持嵌套：`equip:back/3` = 装备栏背包第 3 格的容器；`ISR.ResolveStoragePath` 按 `/` 分段还原。跟随型容器没有稳定路径（不在物品栏里），备份跳过它，读档靠 `add_component_if_missing` 自愈。
+
+别把客户端判定改成「有 `replica.container` 就认」：没打开过的容器也有 `replica.container` 壳子，`GetNumSlots()` 返回 0，那样谁都能点。
+
+### 3.9 拾取落点优先级与音效（0.1.4 起）
+
+同一种物品可能同时有「玩家物品栏固定格」和「容器内固定格」（切斯特第 6 格 + 物品栏第 8 格就出现过）。`TryPlaceByMarks` 按 `ISR.Config.pickup_to_container` 决定顺序：
+
+| 配置 | 行为 |
+|---|---|
+| 开启（默认） | 容器内标记排前面（同类内部仍按 `order`），玩家物品栏标记排后面。拾取到的东西直接进容器 |
+| 关闭 | 容器内标记整条不参与，只用玩家物品栏标记；物品栏没有可用固定格就交回原版落点 |
+
+排序在 `isr_placement.lua` 的 `OrderMarksForConfig`，`IsOwnInventoryMark` 判 `mark.container_guid == owner.GUID`。
+
+**判断「这一格能不能放」用 `adapter:CanUseSlot`，不是 `CanUseEmptySlot`**：固定格里已经有同种物品的**未满堆叠**时要认这一格（草、树枝采完就是并进那一堆），只判空会把资源推回物品栏——容器没打开时最明显（0.1.4 的日志：`Marked placement no hit cutgrass` 紧跟着 `Inv give result cutgrass slot 1`，就是槽里那堆草挡着）。`CanUseEmptySlot` 仍留给「找空格」的候选搜索用，两者语义别混。适配器没实现 `CanUseSlot` 时回落到 `CanUseEmptySlot`。
+
+**音效**：物品直接进容器时，玩家物品栏不会走 `Inventory:GiveItem` 的 `gotnewitem`（`inventory.lua:1100` 那里才播拾取音），所以原版一点声音都没有。补法是 `ISR.PlayPickupSound(owner, item)`（`isr_slotmarks.lua`）：照原版 `player_common.lua` 的 `OnGotNewItem` 查 `PICKUPSOUNDS[item.pickupsound or "DEFAULT_FALLBACK"]`，**直接挂在玩家实体的 SoundEmitter 上**——这段代码只在服务端跑，服务端实体上的声音会同步给附近客户端（和原版 drop 音一个路子）。物品把 `pickupsound` 设成 `"NONE"` 时不响，和原版一致；owner 没有 SoundEmitter 就直接跳过，不报错。
+
+只在 `context.inventory ~= nil`（玩家物品栏发起的 GiveItem）且目标不是玩家自己时播 —— 容器侧的 STORE / 掉落不该有拾取音。
+
+**作用距离**（`container_range`）：世界里的容器不设限就是「站在地图另一头也能把东西送进基地箱子」，破坏平衡。判定在 `ISR.IsStorageWithinRange`（`isr_storage.lua`）：
+
+| 容器 | 规则 |
+|---|---|
+| 玩家自己的物品栏 | 不设限 |
+| 随身携带（owner 链终点是玩家：背包、背包里的桶） | 不设限，永远算在手边 |
+| 世界里的容器（基地箱子、切斯特、哈奇） | 量玩家到它的水平距离，超过档位就不送 |
+| 装在别的容器里的（limbo，无世界坐标） | 用宿主容器的位置算：在近处的切斯特里 → 通过；在远处的箱子里 → 拒绝 |
+
+档位 `ISR.ContainerRangeLimits`：`near = 10`、`medium = 24`、`far = 48`（世界单位，4 = 一格地皮）。切斯特的唤醒跟随距离是 14，所以 near 够它跟随用。拿不到 `Transform` 的实体一律放行：宁可送不进去，也别把物品卡在半路。跳过时日志 `Marked placement no hit ... skipped <guid>@<slot>:range`。
+
 ---
 
 ## 4. 数据流
@@ -188,6 +246,20 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 标记存在**容器实体**上（玩家 = 玩家实体，背包 = 背包实体），不存玩家身上。背包丢地上被捡走，标记跟着背包走 —— 设计选择。
 
+### 4.1 持久化与读档恢复（0.1.4）
+
+三层，缺任何一层都会出现「读档 / 下地穴后标记消失」：
+
+| 层 | 位置 | 作用 |
+|---|---|---|
+| 1 组件自愈 | `isr_slotmarkstore:OnSave` 返回表带 `add_component_if_missing = true` | 容器 prefab 不保证「inventoryitem 先、container 后」：原版 `beargerfur_sack` 第 190 行 AddComponent("container")、第 201 行才 AddComponent("inventoryitem")；`tacklecontainer`（含 `supertacklecontainer`）是 103 / 112。`AddComponentPostInit("container")` 那一刻判不到 inventoryitem，store 不会被挂上。读档时 `EntityScript:SetPersistData` 找不到组件就直接丢弃数据。带这个 flag 后引擎先补建组件再 OnLoad（`entityscript.lua:1980`、`:2011`）。 |
+| 2 玩家级备份 | `isr_persistence.lua` 的 `ISR.MARK_BACKUP_KEY`（`isr_slot_marks`） | `player:OnSave` 把随身容器的标记按「在身上的位置」写成快照：`inv` = 玩家自身、`inv:<N>` = 物品栏第 N 格、`equip:<槽>` = 装备栏某槽，嵌套用 `/` 接（`equip:back/3` = 装备栏背包第 3 格的容器）。`OnLoad` 之后按位置补回**空缺**的格，已有标记优先、不覆盖。兜住跨 shard 时引擎没搬过来的数据。跟随型容器（切斯特、哈奇）没有稳定路径，备份跳过，靠第 1 层自愈。 |
+| 3 加载期不清除 | `isr_inventoryhooks.lua` 的 `IsStorageLoading` | 原版 `Inventory:OnLoad` / `Container:OnLoad` 会用存档槽位号调 `GiveItem`，包装里「物品与标记不符就清标记」在加载中是误伤。`Container:OnLoad` 期间置 `_isr_loading`，`Inventory` 用原版已有字段 `isloading`，两者都跳过清除。 |
+
+**不要**把第 1 层换成「无条件给所有容器挂 store」：世界容器（箱子、锅、切斯特）数量大，且它们本来就不允许标记，白挂组件没收益。也不要给 `MakeInventoryPhysics` 之后补 hook —— 它只加物理，不加 inventoryitem（`standardcomponents.lua`）。
+
+诊断（`debug_log=true`）：读档后打 `Mark backup restored restored=N kept=M missing_container=K`。
+
 ---
 
 ## 5. 操作与配置
@@ -199,7 +271,7 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 | 控制台预留 | `ISR.DebugSetPrefabMark(3, "cutgrass")`，背包 `(2, "twigs", true)` |
 | 控制台清除 | `ISR.DebugClearSlotMark(3)` |
 
-配置项（`isr_config.lua` 读）：`pin_key`（V/B/N/G/NONE）、`icon_opacity`（0~1，默认 0.35）、`debug_log`。
+配置项（`isr_config.lua` 读）：`pin_key`（V/B/N/G/NONE）、`icon_opacity`（0~1，默认 0.35）、`debug_log`、`pickup_to_container`（默认 true，关掉后容器内固定格不再自动吸入物品）、`container_range`（near / medium / far，默认 medium）。
 
 **不要**再加 `mark_modifier` / `prefab_mark` 这类选项：早期开发版曾用组合键循环标记、并用开关控制物品标记，0.1.0 已把它们删掉，只剩「按住固定键点格子」一条路径。
 
@@ -213,7 +285,7 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 - **不要把发布目录复制进 `mods\item-slot-reservation\`**。工坊订阅版已加载，多一份本地副本会让模组列表出现两个同名条目。上传后 Steam 自动拉取到 `workshop\content\322330\3830575143\`，无需手动同步缓存。
 - 工坊不接受同版本覆盖：每次 Upload 前必须升 `modinfo.lua` 的 `version`。
 - 启用方式：各存档 `modoverrides.lua` 勾选工坊 id；不再用 `ForceEnableMod`（会与工坊版本重复加载）
-- **本地测试副本**（按需临时建，用完即删）：`mods\item-slot-reservation-test\`，从发布目录拷入，脚本与仓库逐字节一致，只有 `modinfo.lua` 不同 —— `name` 带 `[TEST]` 前缀、`version` 带 `-test` 后缀、描述首行写「本地测试版」，好和工坊版区分。只为 `Cluster_4`（存档名「测试」）启用，该存档把 `workshop-3830575143` 置 `enabled=false` 以免两份 hook 叠加。测完删目录、回滚该存档的 `modoverrides.lua`。2026-11-01 用过一次，已清理。
+- **本地测试副本**（按需临时建）：`mods\item-slot-reservation-test\`，从发布目录拷入，脚本与仓库逐字节一致，只有 `modinfo.lua` 不同 —— `name` 带 `[TEST]` 前缀、`version` 带 `-test` 后缀、描述首行写「本地测试版」，好和工坊版区分。只为 `Cluster_4`（存档名「测试」）启用，该存档把 `workshop-3830575143` **整条移除**（不是 `enabled=false`，否则两份 hook 叠加）。测完把目录**移入** `backup\item-slot-reservation-test-<版本>-<日期>\`（不要留在 `mods\` 里），再用 `backup\modoverrides.Cluster_4_{Master,Caves}.bak-testmod-<日期>` 覆盖回原位置。2026-11-01 反复用过（0.1.4 全程），当前仍留在 `mods\` 等工坊上传后清理。
 - 改完代码必须**同时重启客户端和两个 dedicated server 进程**：服务端是独立进程，只重启客户端加载不到服务端改动
 - 日志：`Documents\Klei\DoNotStarveTogether\client_log.txt` / `master_server_log.txt`，标签 `[ItemSlotReservation]`，需在设置里开「调试日志」
 
@@ -222,18 +294,17 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 ## 7. 跑测试
 
 ```bash
-# lupa 装在仓库外，用 ISR_LUPA_PATH 指过去（缺省回退到父目录下的 .lua-test-runtime）
-export ISR_LUPA_PATH="$HOME/.lua-test-runtime"
-# lupa 的 io.open 读不了中文路径 → 复制到纯 ASCII 目录再跑
-cp -r . /tmp/isrtest && cd /tmp/isrtest && python tests/run_lua_tests.py
+# 在仓库根直接跑（路径全是 ASCII，不必复制）
+export ISR_LUPA_PATH="C:/Users/Administrator/DeskBox/work/WorkBuddy/Don't Starve-mod/.lua-test-runtime"
+python tests/run_lua_tests.py
 ```
 
 两个坑：
 
-1. lupa 不在仓库里（避免把二进制依赖提交进 git）；`run_lua_tests.py` 依次找 `ISR_LUPA_PATH` 环境变量、`tests/../.lua-test-runtime`、工作区级的 `../../.lua-test-runtime`。
-2. lupa 2.8（Lua 5.5）的 `io.open` 读不了中文路径 → 必须复制到纯 ASCII 目录再跑。
+1. lupa 不在仓库里（避免把二进制依赖提交进 git）；`run_lua_tests.py` 依次找 `ISR_LUPA_PATH` 环境变量、`tests/../.lua-test-runtime`、工作区级的 `../../.lua-test-runtime`。实际装在工作区根的 `.lua-test-runtime`（`Don't Starve-mod\.lua-test-runtime`）。
+2. lupa 2.8（Lua 5.5）的 `io.open` 读不了中文路径 → 仓库路径本身是 ASCII，可以原地跑；要换成含中文的目录就得先 `cp -r` 到纯 ASCII 目录。
 
-2026-11-01 实测：`PASS 22 test files`。新增/改动功能时同步补 `tests/test_*.lua`，跑了再交付。
+2026-11-01 实测：`PASS 29 test files`。新增/改动功能时同步补 `tests/test_*.lua`，跑了再交付。
 
 ---
 
@@ -245,6 +316,9 @@ cp -r . /tmp/isrtest && cd /tmp/isrtest && python tests/run_lua_tests.py
 - **口袋专用物品（余烬/灵魂）必须绕过预留**：`canonlygoinpocket`（以太余烬、查理玫、灵魂罐）与 `canonlygoinpocketorpocketcontainers`（沃拓克斯灵魂）没有背包退路，被预留拦住就会掉地上；余烬还 `canbepickedup=false`，一掉就等于丢了。它们由 `ISR.IsPocketOnlyItem` 识别，`ShouldReserveMarkedSlotsForItem` 直接返回假；落进预留格时顺手清掉那格的预留。加新的「只能放物品栏」物品时先查它在 prefab 里用的是哪个字段。
 - ~~客户端预测不认预留~~：原版 `inventory_classified:ReceiveItem` 先把物品画进固定格、服务端选定别的落点后回滚，只闪一帧不影响归属。已在 `isr_clientpredict.lua` 里处理（§3.7）；改动预测相关代码时别把这两层拆掉。
 - 沙箱限制：mod 环境里 `setmetatable/pcall/tonumber/next` 等为 nil，走 `GLOBAL`；禁止 `io.open` 写盘（引擎 2025-01 起只读）。
+- **`GLOBAL["名字"]` 写错就把服务器打崩**：服务端开着 `scripts/strict.lua`，读 `_G` 上没声明过的名字会直接抛 `variable 'Xxx' is not declared`。0.1.4 第一次装就是这么崩的（`GLOBAL["IsMasterSimulation"]`——它其实是 `isr_markstores.lua` 里自己定义的局部函数，不是全局）。规则：`ISR.GetGlobalValue` 只传确实是游戏常驻全局的名字；要判服务端就用 `TheWorld.ismastersim`。`tests/test_modmain_load.lua` 里有一个「严格 GLOBAL」替身，加新名字会让测试先炸。
+- **客户端兜底会多发 RPC**：`replica.inventoryitem` 不联网 `owner`，客户端拼不出「切斯特身上的背包」这类归属链，所以 `IsClientMarkableContainerInst` 最后一段是「`GetNumSlots() > 0` 就放行，交给服务端裁决」。代价：对着地上的普通箱子按 V + 左键也会发请求，服务端 `reason = "not_markable"` 拒绝并回推，表现为闪一下清除音。这是换取「任何没见过的容器都能试」必须付的账，不要为了消掉这个音效把兜底删掉。
+- **作用距离之外的固定格会静默失效**：`container_range` 挡住时物品走原版落点回物品栏，玩家看到的就是「固定了但不进容器」。排查先看日志 `skipped <guid>@<slot>:range`，再问玩家档位选的是哪个。
 - 许可证：MIT（见 `LICENSE`）。
 
 ---

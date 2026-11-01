@@ -38,22 +38,26 @@ function ISR.MarkMatchesItem(mark, item)
         and NormalizePrefab(item.prefab) == prefab
 end
 
+-- 枚举该玩家所有带标记的容器。走注册表（有标记的容器都登记过），
+-- 这样跟随型容器（切斯特、哈奇）和别的模组容器也能算进来。
 function ISR.GetServerMarks(player)
     local marks = {}
-    for _, inst in ipairs(ISR.GetPersonalStorageInstances(player)) do
-        local store = inst.components ~= nil and inst.components.isr_slotmarkstore or nil
-        if store ~= nil then
-            for slot, mark in pairs(store:GetMarks()) do
-                if IsValidStoredMark(mark) then
-                    marks[ISR.GetSlotKey(inst.GUID, slot)] =
-                    {
-                        container_guid = inst.GUID,
-                        slot = slot,
-                        prefab = GetMarkPrefab(mark),
-                        order = mark.order,
-                    }
-                else
-                    ISR.Log("Stored mark skipped", "reason", "prefab", "container", tostring(inst.GUID), "slot", tostring(slot))
+    for _, inst in ipairs(ISR.GetMarkContainerInstances()) do
+        if ISR.IsStorageOwnedByPlayer(player, inst) then
+            local store = inst.components ~= nil and inst.components.isr_slotmarkstore or nil
+            if store ~= nil then
+                for slot, mark in pairs(store:GetMarks()) do
+                    if IsValidStoredMark(mark) then
+                        marks[ISR.GetSlotKey(inst.GUID, slot)] =
+                        {
+                            container_guid = inst.GUID,
+                            slot = slot,
+                            prefab = GetMarkPrefab(mark),
+                            order = mark.order,
+                        }
+                    else
+                        ISR.Log("Stored mark skipped", "reason", "prefab", "container", tostring(inst.GUID), "slot", tostring(slot))
+                    end
                 end
             end
         end
@@ -191,6 +195,30 @@ function ISR.PlayClientMarkClearSound()
     local focal_point = ISR.GetFocalPoint()
     if focal_point ~= nil and focal_point.SoundEmitter ~= nil then
         focal_point.SoundEmitter:PlaySound("dontstarve/HUD/click_negative")
+    end
+end
+
+-- 物品被直接放进容器时，玩家的物品栏收不到 gotnewitem，原版拾取音效也就不会播
+-- （声音在 inventory.lua 的 gotnewitem 分支里，见 player_common 的 OnGotNewItem）。
+-- 这里照原版的方式查一遍 PICKUPSOUNDS，给玩家一个反馈。
+--
+-- 只在服务端调用：声音挂在玩家实体上，随实体同步给附近客户端（和原版 drop 音一个路子）。
+-- 不要在这里查 IsMasterSimulation —— 它不是真正常驻的全局名，服务端开着 strict.lua，
+-- GLOBAL["IsMasterSimulation"] 会直接抛 "variable is not declared" 把服务器打崩。
+function ISR.PlayPickupSound(owner, item)
+    if owner == nil or owner.SoundEmitter == nil then
+        return
+    end
+
+    local sounds = ISR.GetGlobalValue("PICKUPSOUNDS", nil)
+    if sounds == nil then
+        return
+    end
+
+    -- 物品可以把 pickupsound 设成 "NONE"（原版就是这么屏蔽的），查不到就静音。
+    local sound = sounds[item ~= nil and item.pickupsound or "DEFAULT_FALLBACK"]
+    if sound ~= nil then
+        owner.SoundEmitter:PlaySound(sound)
     end
 end
 
@@ -369,10 +397,15 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_SET_MARK, function(player, container
         or ISR.GetStorageFromEntity(container_inst)
     local adapter = ISR.GetStorageAdapter(container, container_inst == player and "inventory" or nil)
     local slot_count = adapter ~= nil and adapter:GetSlotCount(container) or 0
+    -- 归属判定之外再放一条：容器此刻正被这名玩家打开。切斯特没眼骨时不跟随任何人，
+    -- 组件语义判不出归属，但打开它的人显然就是使用者。
+    local opened_here = container ~= nil
+        and container.IsOpenedBy ~= nil
+        and container:IsOpenedBy(player) == true
     if container == nil
         or adapter == nil
         or slot > slot_count
-        or not ISR.IsMarkableContainerForPlayer(player, container_guid)
+        or (not opened_here and not ISR.IsMarkableContainerForPlayer(player, container_guid))
     then
         ISR.Log(
             "Server mark rejected",
@@ -395,10 +428,30 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_SET_MARK, function(player, container
         return
     end
 
+    -- 归属：容器上记过的 owner 说了算。第一个在这里落标记的人成为 owner，
+    -- 之后别人打开同一个容器也改不了 —— 否则多人服会互相覆盖。
+    local owner_userid = store.GetOwner ~= nil and store:GetOwner() or nil
+    if owner_userid ~= nil and player.userid ~= nil and owner_userid ~= player.userid then
+        ISR.Log(
+            "Server mark rejected",
+            "reason", "owner",
+            "container", tostring(container_guid),
+            "slot", tostring(slot),
+            "owner", tostring(owner_userid),
+            "player", tostring(player.userid)
+        )
+        SyncAuthoritativeSlotMark(player, container_guid, slot)
+        return
+    end
+
     if prefab == nil then
         store:ClearMark(slot)
         ISR.SyncMarkToClient(player, container_guid, slot, nil)
         return
+    end
+
+    if owner_userid == nil and store.SetOwner ~= nil then
+        store:SetOwner(player.userid)
     end
 
     -- 空格才能标记；但格子里已经放着「正是要预留的那种东西」时也允许，

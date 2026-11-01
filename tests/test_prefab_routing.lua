@@ -79,7 +79,8 @@ load_module("scripts/isr_persistence.lua")
 load_module("scripts/isr_placement.lua")
 load_module("scripts/isr_candidates.lua")
 
-local ISR = env.ISR
+-- 组件文件由 dofile 在全局环境执行，它要能拿到同一个 ISR（注册标记容器用）
+ISR = env.ISR
 local MarkStore = dofile(ISR_TEST_ROOT.."/scripts/components/isr_slotmarkstore.lua")
 
 local player =

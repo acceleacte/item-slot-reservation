@@ -95,6 +95,52 @@ function ISR.ShouldReserveMarkedSlotsForItem(owner, item)
         and ISR.HasAnyServerMarks(owner)
 end
 
+-- 玩家自己身上的标记（物品栏 / 装备栏）与容器里的标记（切斯特、背包里的桶）分两类。
+local function IsOwnInventoryMark(owner, mark)
+    return owner ~= nil and mark.container_guid == owner.GUID
+end
+
+-- 「拾取后直接放回容器」开着时，容器里的标记优先；关掉时容器标记整条不参与，
+-- 物品照常回玩家物品栏的固定格。
+local function OrderMarksForConfig(owner, marks)
+    local wants_container = ISR.Config == nil or ISR.Config.pickup_to_container ~= false
+    local container_marks = {}
+    local inventory_marks = {}
+    for _, mark in ipairs(marks) do
+        if IsOwnInventoryMark(owner, mark) then
+            table.insert(inventory_marks, mark)
+        elseif wants_container then
+            table.insert(container_marks, mark)
+        end
+    end
+
+    local ordered = {}
+    for _, mark in ipairs(container_marks) do
+        table.insert(ordered, mark)
+    end
+    for _, mark in ipairs(inventory_marks) do
+        table.insert(ordered, mark)
+    end
+    return ordered
+end
+
+-- 固定格里已经有同种物品的未满堆叠时也要认：草、树枝这类资源采集后应当并进去，
+-- 只判「空不空」会把它推回物品栏（容器没打开时尤其明显）。
+local function CanPlaceIntoMarkedSlot(adapter, storage, item, slot, context)
+    if adapter.CanUseSlot ~= nil then
+        return adapter:CanUseSlot(storage, item, slot, context)
+    end
+    return adapter:CanUseEmptySlot(storage, item, slot, context)
+end
+
+-- 没中的时候把每个候选为什么被跳过记下来，日志里只出现 no hit 太难查。
+local function NoteSkip(skipped, mark, reason)
+    if skipped == nil then
+        return
+    end
+    skipped[#skipped + 1] = tostring(mark.container_guid).."@"..tostring(mark.slot)..":"..reason
+end
+
 function ISR.TryPlaceByMarks(context)
     if not ISR.ShouldRoutePlacementByMarks(context) then
         return false
@@ -106,23 +152,47 @@ function ISR.TryPlaceByMarks(context)
         target_guid = target_guid or (target_adapter ~= nil and target_adapter:GetGUID(context.target_storage) or nil)
     end
 
-    for _, mark in ipairs(ISR.GetSortedServerMarksForPrefab(context.owner, context.item.prefab)) do
+    local skipped = {}
+    local range_limit = ISR.GetContainerRangeLimit ~= nil and ISR.GetContainerRangeLimit() or nil
+    for _, mark in ipairs(OrderMarksForConfig(context.owner, ISR.GetSortedServerMarksForPrefab(context.owner, context.item.prefab))) do
         local matches_target = target_guid == nil or mark.container_guid == target_guid
-        if matches_target and mark.container_guid ~= context.source_guid then
+        if not matches_target then
+            NoteSkip(skipped, mark, "target")
+        elseif mark.container_guid == context.source_guid then
+            NoteSkip(skipped, mark, "source")
+        else
             local storage = context.target_storage or ISR.GetStorageForMark(context.owner, mark)
             local adapter = ISR.GetStorageAdapter(storage, context.target_kind)
-            if adapter ~= nil and adapter:GetGUID(storage) == mark.container_guid
-                and adapter:CanUseEmptySlot(storage, context.item, mark.slot, context)
+            if adapter == nil then
+                NoteSkip(skipped, mark, "adapter")
+            elseif adapter:GetGUID(storage) ~= mark.container_guid then
+                NoteSkip(skipped, mark, "guid")
+            elseif ISR.IsStorageWithinRange ~= nil
+                and not ISR.IsStorageWithinRange(context.owner, storage, range_limit)
             then
+                -- 距离太远不送进去，不然满地捡的东西都能直接飞回基地箱子
+                NoteSkip(skipped, mark, "range")
+            elseif not CanPlaceIntoMarkedSlot(adapter, storage, context.item, mark.slot, context) then
+                NoteSkip(skipped, mark, "slot")
+            else
                 local result, result_slot = adapter:PlaceInSlot(storage, context.item, mark.slot, context)
                 if result then
                     ISR.Log("Marked placement hit", tostring(context.item.prefab), "container", tostring(mark.container_guid), "slot", tostring(mark.slot), "reason", tostring(context.reason))
+                    -- 物品直接被容器吃了，物品栏不会收到 gotnewitem，拾取音效得自己补。
+                    if result ~= "inventory"
+                        and context.inventory ~= nil
+                        and not IsOwnInventoryMark(context.owner, mark)
+                        and ISR.PlayPickupSound ~= nil
+                    then
+                        ISR.PlayPickupSound(context.owner, context.item)
+                    end
                     return result, result_slot or mark.slot
                 end
+                NoteSkip(skipped, mark, "place")
             end
         end
     end
 
-    ISR.Log("Marked placement no hit", tostring(context.item.prefab), "reason", tostring(context.reason))
+    ISR.Log("Marked placement no hit", tostring(context.item.prefab), "reason", tostring(context.reason), "skipped", #skipped > 0 and table.concat(skipped, ",") or "none")
     return false
 end

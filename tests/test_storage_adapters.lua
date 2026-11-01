@@ -12,6 +12,7 @@ ISR =
 }
 
 dofile(ISR_TEST_ROOT.."/scripts/isr_storage.lua")
+dofile(ISR_TEST_ROOT.."/scripts/isr_candidates.lua")
 
 local inventory =
 {
@@ -94,3 +95,48 @@ assert_equal(replaced, true, "named adapter can be replaced")
 assert_equal(ISR.GetStorageAdapter(custom):GetGUID(custom), 100, "replacement takes effect")
 
 assert_equal(ISR.RegisterStorageAdapter("invalid", {}), false, "invalid adapter is rejected")
+
+-- 固定格里已经有同种物品的未满堆叠时，容器适配器要认这一格（草、树枝并堆），
+-- 只判「空不空」会让采集到的资源被推回物品栏。
+local function NewStack(prefab, stacksize, maxsize)
+    return
+    {
+        prefab = prefab,
+        components =
+        {
+            stackable =
+            {
+                stacksize = stacksize,
+                maxsize = maxsize,
+                IsFull = function(self) return self.stacksize >= self.maxsize end,
+                CanStackWith = function(_, other) return other.prefab == prefab end,
+            },
+        },
+    }
+end
+
+local grass_stack = NewStack("cutgrass", 20, 40)
+local full_grass = NewStack("cutgrass", 40, 40)
+local picked_grass = NewStack("cutgrass", 1, 40)
+local twig_stack = NewStack("twigs", 5, 40)
+
+local stack_container =
+{
+    inst = { GUID = 7 },
+    numslots = 5,
+    slots = { [1] = grass_stack, [2] = full_grass, [3] = twig_stack },
+    CanTakeItemInSlot = function() return true end,
+    AcceptsStacks = function() return true end,
+    GetItemInSlot = function(self, slot) return self.slots[slot] end,
+}
+local container_adapter = ISR.GetStorageAdapter(stack_container, "container")
+assert_equal(container_adapter:CanUseEmptySlot(stack_container, picked_grass, 1), false,
+    "a filled stack is not an empty slot")
+assert_equal(container_adapter:CanUseSlot(stack_container, picked_grass, 1), true,
+    "a container slot holding the same partial stack accepts the pickup")
+assert_equal(container_adapter:CanUseSlot(stack_container, picked_grass, 2), false,
+    "a full stack cannot take more")
+assert_equal(container_adapter:CanUseSlot(stack_container, picked_grass, 3), false,
+    "a different item cannot stack into the reserved slot")
+assert_equal(container_adapter:CanUseSlot(stack_container, picked_grass, 4), true,
+    "an empty container slot still works")
