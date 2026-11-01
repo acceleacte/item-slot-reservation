@@ -67,3 +67,27 @@ assert_equal(ISR.CanFullyStackIntoAvailableStorage(inventory, item), true, "stac
 
 overflow.slots[1] = ExistingStack(3)
 assert_equal(ISR.CanFullyStackIntoAvailableStorage(inventory, item), false, "insufficient aggregate room is rejected")
+
+-- CanStackIntoInventorySlot：格中同类未满才算可用，空格不算堆叠目标。
+inventory.GetItemInSlot = function(self, slot) return self.itemslots[slot] end
+
+local full_stack = { components = { stackable = { IsFull = function() return true end } } }
+local foreign_item =
+{
+    prefab = "twigs",
+    components =
+    {
+        inventoryitem = {},
+        stackable = { CanStackWith = function() return false end },
+    },
+}
+
+assert_equal(ISR.CanStackIntoInventorySlot(inventory, item, 1), true, "same-prefab unfinished stack accepts the item")
+assert_equal(ISR.CanStackIntoInventorySlot(inventory, item, 2), false, "empty slot is not a stack target")
+
+inventory.itemslots[1] = full_stack
+assert_equal(ISR.CanStackIntoInventorySlot(inventory, item, 1), false, "full stack is rejected")
+
+inventory.itemslots[1] = ExistingStack(4)
+assert_equal(ISR.CanStackIntoInventorySlot(inventory, foreign_item, 1), false, "different prefab is rejected")
+assert_equal(ISR.CanStackIntoInventorySlot(nil, item, 1), false, "missing inventory is rejected")

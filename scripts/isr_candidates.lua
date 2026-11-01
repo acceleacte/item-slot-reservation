@@ -32,6 +32,35 @@ function ISR.CanUseEmptyInventorySlot(inventory, item, slot)
         and inventory:GetItemInSlot(slot) == nil
 end
 
+-- 目标格已有同类未满堆叠时也算可用。原版 GetNextAvailableSlot 先堆叠再找空格，
+-- 只判断空格会让可堆叠的物品被挤出物品栏（shift 转移时表现为整单失败）。
+function ISR.CanStackIntoInventorySlot(inventory, item, slot)
+    if inventory == nil or item == nil or slot == nil or inventory.GetItemInSlot == nil then
+        return false
+    end
+
+    local olditem = inventory:GetItemInSlot(slot)
+    return olditem ~= nil
+        and olditem ~= item
+        and item.components ~= nil
+        and item.components.stackable ~= nil
+        and olditem.components ~= nil
+        and olditem.components.stackable ~= nil
+        and inventory:CanTakeItemInSlot(item, slot)
+        and item.components.stackable:CanStackWith(olditem)
+        and not olditem.components.stackable:IsFull()
+end
+
+-- 只能放物品栏的东西：以太余烬（canonlygoinpocket）、沃拓克斯灵魂
+-- （canonlygoinpocketorpocketcontainers，只认灵魂罐那种口袋容器）。它们进不了背包和箱子，
+-- 预留规则必须让路：物品栏全被预留时如果还拦着，余烬会掉地上且 canbepickedup=false，直接卡死。
+function ISR.IsPocketOnlyItem(item)
+    local inventoryitem = item ~= nil and item.components ~= nil and item.components.inventoryitem or nil
+    return inventoryitem ~= nil
+        and (inventoryitem.canonlygoinpocket == true
+            or inventoryitem.canonlygoinpocketorpocketcontainers == true)
+end
+
 function ISR.CanUseContainerSlot(container, item, slot)
     if container == nil or slot == nil or slot < 1 or slot > ISR.GetContainerSlotCount(container) or container.inst == item then
         return false

@@ -1,6 +1,6 @@
 name = "Item Slot Reservation"
 description = [[
-版本 0.1.2
+版本 0.1.3
 
 物品格预留（Item Slot Reservation）把储物格固定给指定物品。
 基本能放进物品栏的都能固定：草、树枝、木头、石头等材料，武器、工具、帽子等装备。
@@ -8,6 +8,8 @@ description = [[
 固定之后：
 - 该物品被拾取、制作完成、或从装备栏卸下时，自动回到固定的格子。
 - 其它物品不会占用这一格；格子被手动塞进别的东西时，预留会自动解除。
+- 只能放物品栏的物品（以太余烬、沃拓克斯灵魂）不受预留限制，照常进物品栏。
+- 快速转移（Shift + 左键）只落进未预留的格、或该物品自己的预留格；物品栏没有可落点时直接进背包，不会先闪进别人的预留格。
 
 支持玩家物品栏、背包、随身容器和已装备容器。
 按 V 键后鼠标左键点击已有物品的格子即可固定；同格再按一次取消。
@@ -15,7 +17,7 @@ description = [[
 
 --------------------------------
 
-Version 0.1.2
+Version 0.1.3
 
 Item Slot Reservation fixes storage slots to specific items.
 Anything that fits in the inventory can be fixed: grass, twigs, logs, stone and other materials; weapons, tools, hats and other equipment.
@@ -23,13 +25,15 @@ Anything that fits in the inventory can be fixed: grass, twigs, logs, stone and 
 Once fixed:
 - The item returns to its fixed slot when picked up, crafted, or unequipped.
 - Other items do not occupy the slot; forcing another item in clears the reservation.
+- Pocket-only items (Ethereal Embers, Wortox Souls) ignore reservations and always go to the inventory.
+- Quick transfer (Shift + left-click) only targets unreserved slots or the item's own reserved slot; when the inventory has no room for it the item goes straight to the backpack instead of briefly flickering into someone else's slot.
 
 Supports the player inventory, backpacks, carried containers and equipped containers.
 Hold V and left-click a slot that holds an item to fix it; click again to clear.
 Reservations persist with the container entity and survive save/load.
 ]]
 author = "acceleacte"
-version = "0.1.2"
+version = "0.1.3"
 api_version = 10
 dst_compatible = true
 dont_starve_compatible = false

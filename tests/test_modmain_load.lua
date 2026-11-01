@@ -20,6 +20,7 @@ TheWorld = { ismastersim = true }
 AddComponentPostInit = function() end
 AddPlayerPostInit = function() end
 AddClassPostConstruct = function() end
+AddPrefabPostInit = function() end
 AddModRPCHandler = function() end
 AddClientModRPCHandler = function() end
 

@@ -84,11 +84,14 @@ function ISR.ShouldRoutePlacementByMarks(context)
         and ISR.HasServerMarksForItem(context.owner, context.item)
 end
 
+-- 只能放物品栏的物品（余烬 / 灵魂）不参与预留：它们没有背包这个退路，
+-- 拦住只会让物品无处可去。
 function ISR.ShouldReserveMarkedSlotsForItem(owner, item)
     return owner ~= nil
         and item ~= nil
         and item.components ~= nil
         and item.components.inventoryitem ~= nil
+        and not (ISR.IsPocketOnlyItem ~= nil and ISR.IsPocketOnlyItem(item))
         and ISR.HasAnyServerMarks(owner)
 end
 

@@ -26,19 +26,6 @@ function ISR.TryGiveItemToContainer(inventory, item, container, slot, src_pos)
     return false
 end
 
-local function GiveItemWithOverflowBlocked(inventory, old_GiveItem, item, slot, src_pos)
-    local old_ignoreoverflow = inventory.ignoreoverflow
-    local old_ignorespoverflow = inventory.ignorespoverflow
-    inventory.ignoreoverflow = true
-    inventory.ignorespoverflow = true
-
-    local result = old_GiveItem(inventory, item, slot, src_pos)
-
-    inventory.ignoreoverflow = old_ignoreoverflow
-    inventory.ignorespoverflow = old_ignorespoverflow
-    return result
-end
-
 local function GetFallbackUnmarkedEmptySlot(inventory, item, placement_context)
     if placement_context ~= nil
         and placement_context.reason == "shift_transfer"
@@ -46,6 +33,15 @@ local function GetFallbackUnmarkedEmptySlot(inventory, item, placement_context)
         and inventory.inst ~= nil
         and placement_context.target_guid == inventory.inst.GUID
     then
+        for k = 1, inventory:GetNumSlots() do
+            if ISR.CanStackIntoInventorySlot ~= nil
+                and ISR.CanStackIntoInventorySlot(inventory, item, k)
+                and ISR.CanItemUseMarkedSlot(inventory.inst, inventory.inst.GUID, k, item)
+            then
+                return k, inventory.itemslots
+            end
+        end
+
         for k = 1, inventory:GetNumSlots() do
             if ISR.CanUseEmptyInventorySlot(inventory, item, k)
                 and ISR.CanItemUseMarkedSlot(inventory.inst, inventory.inst.GUID, k, item)
@@ -82,6 +78,18 @@ AddPlayerInventoryPostInit(function(self)
             and self.inst ~= nil
             and transfer.target_guid == self.inst.GUID
         if target_inventory_only then
+            -- Shift 转移的落点顺序：该物品的空预留格（TryPlaceByMarks 已处理）
+            -- → 物品栏同类未满堆 → 原版给的合法格 → 物品栏未预留空格
+            -- → 背包（这里返回 nil，交给原版 GiveItem 落背包）。
+            for inventory_slot = 1, self:GetNumSlots() do
+                if ISR.CanStackIntoInventorySlot ~= nil
+                    and ISR.CanStackIntoInventorySlot(self, item, inventory_slot)
+                    and ISR.CanItemUseMarkedSlot(self.inst, self.inst.GUID, inventory_slot, item)
+                then
+                    return inventory_slot, self.itemslots
+                end
+            end
+
             if container == self.itemslots
                 and slot ~= nil
                 and ISR.CanItemUseMarkedSlot(self.inst, self.inst.GUID, slot, item)
@@ -129,6 +137,18 @@ AddPlayerInventoryPostInit(function(self)
             slot = slot,
             src_pos = src_pos,
         })
+        ISR.Log(
+            "Inv give",
+            tostring(inst ~= nil and inst.prefab or nil),
+            "slot", tostring(slot),
+            "reason", tostring(placement_context.reason),
+            "target_guid", tostring(placement_context.target_guid),
+            "self_guid", tostring(self.inst ~= nil and self.inst.GUID or nil),
+            "overflow", tostring(self.GetOverflowContainer ~= nil and self:GetOverflowContainer() ~= nil),
+            "ignoreoverflow", tostring(self.ignoreoverflow),
+            "prevslot", tostring(inst ~= nil and inst.prevslot or nil),
+            "prevcontainer", tostring(inst ~= nil and inst.prevcontainer ~= nil)
+        )
         if ISR.ShouldRoutePlacementByMarks(placement_context) then
             local marked_result, marked_slot = ISR.TryPlaceByMarks(placement_context)
             if marked_result == "inventory" then
@@ -144,18 +164,38 @@ AddPlayerInventoryPostInit(function(self)
         then
             local marked_slot, marked_container = GetFallbackUnmarkedEmptySlot(self, inst, placement_context)
             if marked_slot == nil then
+                -- 物品栏没有可用位：交回原版，物品落进背包/随身容器，而不是整单失败。
+                -- 背包也满、或来源本身就是背包（原版会置 ignoreoverflow）时，原版自己返回失败。
                 ISR.Log("Reserved inventory full", tostring(inst ~= nil and inst.prefab or nil))
-                return GiveItemWithOverflowBlocked(self, old_GiveItem, inst, nil, src_pos)
+                local fallback_result = old_GiveItem(self, inst, nil, src_pos)
+                ISR.Log("Reserved inventory fallback result", tostring(fallback_result))
+                return fallback_result
             elseif marked_container ~= self.itemslots then
                 return ISR.TryGiveItemToContainer(self, inst, marked_container, marked_slot, src_pos)
             end
 
             slot = marked_slot
+        elseif slot == nil and ISR.ShouldReserveMarkedSlotsForItem(self.inst, inst) then
+            ISR.Log("Reserved inventory stackable shortcut", tostring(inst ~= nil and inst.prefab or nil))
         end
 
         local result = old_GiveItem(self, inst, slot, src_pos)
-        if requested_slot ~= nil and result then
-            ISR.ClearServerSlotMarkIfItemMismatches(self.inst, self.inst.GUID, requested_slot, inst)
+        ISR.Log("Inv give result", tostring(inst ~= nil and inst.prefab or nil), "slot", tostring(slot), "result", tostring(result))
+        if result then
+            -- 只能放物品栏的物品（余烬 / 灵魂）绕过预留规则，可能直接落进被预留的格；
+            -- 落进去了就把那格的预留解除，不留「装错东西的死格」。
+            local landed_slot = requested_slot
+            if landed_slot == nil
+                and type(result) == "number"
+                and ISR.IsPocketOnlyItem ~= nil
+                and ISR.IsPocketOnlyItem(inst)
+            then
+                landed_slot = result
+            end
+
+            if landed_slot ~= nil then
+                ISR.ClearServerSlotMarkIfItemMismatches(self.inst, self.inst.GUID, landed_slot, inst)
+            end
         end
         return result
     end
@@ -233,6 +273,16 @@ AddPlayerInventoryPostInit(function(self)
     local old_MoveItemFromAllOfSlot = self.MoveItemFromAllOfSlot
     if old_MoveItemFromAllOfSlot ~= nil then
         function self:MoveItemFromAllOfSlot(slot, container)
+            local item = self.GetItemInSlot ~= nil and self:GetItemInSlot(slot) or nil
+            ISR.Log(
+                "Inventory shift out",
+                "self", tostring(self.inst ~= nil and self.inst.GUID or nil),
+                "slot", tostring(slot),
+                "item", tostring(item ~= nil and item.prefab or nil),
+                "target", tostring(GetTransferTargetGUID(container)),
+                "overflow", tostring(self.GetOverflowContainer ~= nil and self:GetOverflowContainer() ~= nil),
+                "ignoreoverflow", tostring(self.ignoreoverflow)
+            )
             return WithShiftTransferContext(self.inst ~= nil and self.inst.GUID or nil, GetTransferTargetGUID(container), old_MoveItemFromAllOfSlot, self, slot, container)
         end
     end
@@ -256,6 +306,19 @@ AddComponentPostInit("container", function(self)
     local old_MoveItemFromAllOfSlot = self.MoveItemFromAllOfSlot
     if old_MoveItemFromAllOfSlot ~= nil then
         function self:MoveItemFromAllOfSlot(slot, container, opener)
+            local item = self.GetItemInSlot ~= nil and self:GetItemInSlot(slot) or nil
+            local opened = opener ~= nil
+                and self.IsOpenedBy ~= nil
+                and self:IsOpenedBy(opener) or nil
+            ISR.Log(
+                "Container shift out",
+                "self", tostring(self.inst ~= nil and self.inst.GUID or nil),
+                "slot", tostring(slot),
+                "item", tostring(item ~= nil and item.prefab or nil),
+                "target", tostring(GetTransferTargetGUID(container)),
+                "opened", tostring(opened),
+                "readonly", tostring(self.readonlycontainer)
+            )
             return WithShiftTransferContext(self.inst ~= nil and self.inst.GUID or nil, GetTransferTargetGUID(container), old_MoveItemFromAllOfSlot, self, slot, container, opener)
         end
     end

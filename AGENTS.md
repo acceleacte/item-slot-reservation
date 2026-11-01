@@ -9,8 +9,8 @@
 | 项 | 值 |
 |---|---|
 | 模组名 | Item Slot Reservation |
-| 版本 | 0.1.2（`modinfo.lua`） |
-| 类型 | 服务器模组，`all_clients_require_mod = false`，`client_only_mod = false` |
+| 版本 | 0.1.3（`modinfo.lua`） |
+| 类型 | 服务器模组，`all_clients_require_mod = true`（2026-10-31 由 false 改来，见 §9.5），`client_only_mod = false` |
 | `api_version` | 10 |
 | 全局表 | `ISR`（同时挂到 `GLOBAL.ISR`） |
 | RPC 命名空间 | `item_slot_reservation` |
@@ -21,10 +21,10 @@
 
 ---
 
-## 2. 文件结构（2978 行 Lua，18 个测试）
+## 2. 文件结构（3323 行 Lua，22 个测试）
 
 ```
-modmain.lua                 18 行，12 个 modimport，顺序有依赖（env → config → icons → storage → markstores → slotmarks → placement → candidates → debug → persistence → inventoryhooks → uihooks）
+modmain.lua                 19 行，13 个 modimport，顺序有依赖（env → config → icons → storage → markstores → slotmarks → placement → candidates → debug → persistence → inventoryhooks → clientpredict → uihooks）
 modinfo.lua                104 行，配置项 + 双语文案
 scripts/
   isr_env.lua              227  GLOBAL 取值兜底、按键码归一化、点击意图、prefab 键工具、i18n
@@ -33,14 +33,15 @@ scripts/
   isr_storage.lua          281  存储适配器注册表 + inventory/container 两个内置适配器
   isr_markstores.lua        88  组件挂载、按 GUID 找 store、个人容器实例枚举
   isr_slotmarks.lua        437  服务端标记 CRUD、匹配判定、客户端缓存、5 个 RPC handler
-  isr_placement.lua        125  放置路由决策、transfer 上下文栈
-  isr_candidates.lua       492  候选格搜索（堆叠/溢出/专用容器优先）
+  isr_placement.lua        128  放置路由决策、transfer 上下文栈
+  isr_candidates.lua       521  候选格搜索（堆叠/溢出/专用容器优先）
   isr_debug.lua            106  自检 + 控制台标记入口
   isr_persistence.lua      170  客户端能力白名单、全量同步、旧开发版存档迁移
-  isr_inventoryhooks.lua   276  GiveItem / GetNextAvailableSlot / Shift 转移 hook
-  isr_uihooks.lua          321  invslot / inventorybar / containerwidget 的 UI hook
+  isr_inventoryhooks.lua   339  GiveItem / GetNextAvailableSlot / Shift 转移 hook
+  isr_clientpredict.lua    326  客户端落点预测（标记先行判落点 → 背包预测 / 守卫窗口）
+  isr_uihooks.lua          348  invslot / inventorybar / containerwidget 的 UI hook
   components/isr_slotmarkstore.lua  110  标记存储组件（OnSave/OnLoad）
-tests/                      18 个 lua 测试 + run_lua_tests.py
+tests/                      22 个 lua 测试 + run_lua_tests.py
 images/                     modicon + wood_frame_128_ARGB（木框贴图）
 ```
 
@@ -120,6 +121,51 @@ end
 
 取 prefab 只为判断「格子里有没有东西」：`GetSlotItemPrefab` 依次尝试 `container:GetItemInSlot` → `container.itemslots` → `container.slots`。
 
+### 3.6 Shift 转移的落点顺序
+
+Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只压一个 `shift_transfer` 转移上下文（`source_guid` = 源容器，`target_guid` = 目标容器），真正选格仍在 `inventory:GiveItem` / `container:GiveItem` 里做。
+
+物品栏方向的落点顺序（`isr_inventoryhooks.lua`，用户指定，别再调换 2 和 3）：
+
+| 顺序 | 规则 | 实现 |
+|---|---|---|
+| 1 | 该物品有预留格且为空 → 直投 | `TryPlaceByMarks` → `CanUseEmptySlot` |
+| 2 | 物品栏里同类未满的堆 → 堆进去 | `CanStackIntoInventorySlot` |
+| 3 | 原版给的格未被别人预留 → 采用 | `GetNextAvailableSlot` 包装的第二段判断 |
+| 4 | 物品栏里未被别人预留的空格 | `CanUseEmptyInventorySlot` |
+| 5 | 都没有 → **交回原版，落背包/随身容器** | `old_GiveItem(self, inst, nil, src_pos)` |
+
+第 5 步以前是「临时置 `ignoreoverflow`/`ignorespoverflow` 后调原版」，效果是把背包一起屏蔽、整单失败。0.1.3 起不再屏蔽：物品栏满就把东西放进背包，背包也满或来源本身就是背包（原版会给 `ignoreoverflow` 置真）时才留在原处。`GiveItemWithOverflowBlocked` 已删除，不要复活。
+
+**踩过的坑（0.1.2）**：物品栏 15 格全被预留时，任何「没有预留格」的物品（日志实测 `meat`）在 `GetFallbackUnmarkedEmptySlot` 拿不到格 → 打 `Reserved inventory full` → 回弹到源容器。同期客户端预测 `inventory_classified:ReceiveItem` 不认预留，会先把物品画进固定格再被服务端回滚，看起来像「短暂进格又弹回」。
+
+### 3.7 客户端预测
+
+服务端把物品放进背包之后，画面还会闪一下：物品先被画进别人的预留格，一个 RTT 后才跳进背包。原因在原版的**预测**路径，`prefabs/inventory_classified.lua` 的 `ReceiveItem` 只按「第一个能放的格」挑位置，完全不认预留标记。那段时间里被预测占用的格会挡住真正属于它的物品。
+
+`isr_clientpredict.lua` 分两层，**顺序不能换**：
+
+| 层 | 实现 | 作用 |
+|---|---|---|
+| 1. 判落点 | `ISR.CanPredictLandInInventory(inventory, item)` 按客户端标记算：自己的空预留格 → 同类未满堆（该格没被别人预留）→ 未预留空格 → 装备栏堆叠 | 算出来「物品栏没有落点」时，服务端必定走 GiveItem 的背包兜底，预测就**直接画进背包**（`PredictIntoOverflow`） |
+| 2. 守卫窗口 | `AddPrefabPostInit("inventory_classified")` 包住 `inst.ReceiveItem`，窗口内把 `player.replica.inventory.CanTakeItemInSlot` 换成守卫版：别人的预留格 → 假 | 还有落点时才用得上：原版搜索跳过被预留的格，落在该落的那一格 |
+
+关键：第 1 层解决「物品栏没位置」，第 2 层解决「物品栏有位置但顺序不对」。只有第 2 层时，全预留会逼死预测，原版那时**连 RPC 都不发**（`container_classified:MoveItemFromAllOfSlot` 只在 `remainder ~= nil` 时 `SendRPCToServer`），玩家看到的是「按了没反应」；改用「失败就退回原版预测」的兜底，又会退回原版预测、照样闪进预留格。两条弯路都走过，别回头。
+
+`PredictIntoOverflow` 的失败原因决定下一步（别合并成一个 nil）：
+
+| 原因 | 处理 |
+|---|---|
+| 预测成功 | 返回背包的 remainder；Shift 转移拿到 0 就照常发 RPC、清源格 |
+| `busy`（背包正在刷新） | 退回原版预测保住这次点击，这一帧可能闪一下 |
+| `none` / `full`（没背包、来源就是背包、背包满） | **返回 nil**：服务端同样放不下，既不预测（否则先闪进预留格再弹回），也不发 RPC |
+
+`CanPredictLandInInventory` 的入参是**物品栏 replica**，不是 classified 实体 —— 在 `ReceiveItem` 包装里要传 `self._parent.replica.inventory`（第一版就错在这里，判断恒为真）。
+
+注意：`CanTakeItemInSlot` 是**实例级**替换（`replica._isr_prediction_guard` 防重复），不碰类；只有窗口打开的那一瞬生效，所以拖拽判定、UI 校验都不受影响。别改成全局替换。
+
+日志（`debug_log=true`）：`Client predict overflow` / `Client predict overflow busy` / `Client predict dropped` / `Client predict blocked ... allowed ... rejected ...` / `Client predict end ... remainder ...`。
+
 ---
 
 ## 4. 数据流
@@ -167,6 +213,7 @@ end
 - **不要把发布目录复制进 `mods\item-slot-reservation\`**。工坊订阅版已加载，多一份本地副本会让模组列表出现两个同名条目。上传后 Steam 自动拉取到 `workshop\content\322330\3830575143\`，无需手动同步缓存。
 - 工坊不接受同版本覆盖：每次 Upload 前必须升 `modinfo.lua` 的 `version`。
 - 启用方式：各存档 `modoverrides.lua` 勾选工坊 id；不再用 `ForceEnableMod`（会与工坊版本重复加载）
+- **本地测试副本**（按需临时建，用完即删）：`mods\item-slot-reservation-test\`，从发布目录拷入，脚本与仓库逐字节一致，只有 `modinfo.lua` 不同 —— `name` 带 `[TEST]` 前缀、`version` 带 `-test` 后缀、描述首行写「本地测试版」，好和工坊版区分。只为 `Cluster_4`（存档名「测试」）启用，该存档把 `workshop-3830575143` 置 `enabled=false` 以免两份 hook 叠加。测完删目录、回滚该存档的 `modoverrides.lua`。2026-11-01 用过一次，已清理。
 - 改完代码必须**同时重启客户端和两个 dedicated server 进程**：服务端是独立进程，只重启客户端加载不到服务端改动
 - 日志：`Documents\Klei\DoNotStarveTogether\client_log.txt` / `master_server_log.txt`，标签 `[ItemSlotReservation]`，需在设置里开「调试日志」
 
@@ -186,7 +233,7 @@ cp -r . /tmp/isrtest && cd /tmp/isrtest && python tests/run_lua_tests.py
 1. lupa 不在仓库里（避免把二进制依赖提交进 git）；`run_lua_tests.py` 依次找 `ISR_LUPA_PATH` 环境变量、`tests/../.lua-test-runtime`、工作区级的 `../../.lua-test-runtime`。
 2. lupa 2.8（Lua 5.5）的 `io.open` 读不了中文路径 → 必须复制到纯 ASCII 目录再跑。
 
-2026-10-31 实测：`PASS 18 test files`。新增/改动功能时同步补 `tests/test_*.lua`，跑了再交付。
+2026-11-01 实测：`PASS 22 test files`。新增/改动功能时同步补 `tests/test_*.lua`，跑了再交付。
 
 ---
 
@@ -194,7 +241,9 @@ cp -r . /tmp/isrtest && cd /tmp/isrtest && python tests/run_lua_tests.py
 
 - **Hook 面很宽**：`GiveItem`、`GetNextAvailableSlot`、`MoveItemFrom*`、`invslot.OnMouseButton`、`invslot.OnControl`、`containerwidget` / `inventorybar`。与容器扩容、自动整理、Shift 增强类模组冲突概率高，表现是「物品进错格」而不是崩溃。
 - **未装客户端的玩家看不到预留**：体验不对称。要对称就把 `all_clients_require_mod` 改回 `true`。
-- **全满分支**：`ignoreoverflow` 临时置 true 期间物品会掉地上，与原版不同。
+- **物品栏全被预留时等于「对其它物品满格」**：这不是 bug，是预留语义的直接结果。0.1.3 起改用「落背包」兜底；但背包也满、或来源就是背包时物品仍留在原处（原版行为）。
+- **口袋专用物品（余烬/灵魂）必须绕过预留**：`canonlygoinpocket`（以太余烬、查理玫、灵魂罐）与 `canonlygoinpocketorpocketcontainers`（沃拓克斯灵魂）没有背包退路，被预留拦住就会掉地上；余烬还 `canbepickedup=false`，一掉就等于丢了。它们由 `ISR.IsPocketOnlyItem` 识别，`ShouldReserveMarkedSlotsForItem` 直接返回假；落进预留格时顺手清掉那格的预留。加新的「只能放物品栏」物品时先查它在 prefab 里用的是哪个字段。
+- ~~客户端预测不认预留~~：原版 `inventory_classified:ReceiveItem` 先把物品画进固定格、服务端选定别的落点后回滚，只闪一帧不影响归属。已在 `isr_clientpredict.lua` 里处理（§3.7）；改动预测相关代码时别把这两层拆掉。
 - 沙箱限制：mod 环境里 `setmetatable/pcall/tonumber/next` 等为 nil，走 `GLOBAL`；禁止 `io.open` 写盘（引擎 2025-01 起只读）。
 - 许可证：MIT（见 `LICENSE`）。
 
