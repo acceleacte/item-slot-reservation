@@ -1,0 +1,264 @@
+# AGENTS.md — item-slot-reservation
+
+> 给接手这个目录的人（或 agent）看的内部说明。用户向的使用说明在 `README.md`。
+
+## 1. 这是什么
+
+**Item Slot Reservation（ISR，物品格预留）**：把储物格固定给指定物品（prefab）。物品被拾取、制作完成、从装备栏卸下时自动回到该格，其它物品避开它。
+
+| 项 | 值 |
+|---|---|
+| 模组名 | Item Slot Reservation |
+| 版本 | 0.1.2（`modinfo.lua`） |
+| 类型 | 服务器模组，`all_clients_require_mod = false`，`client_only_mod = false` |
+| `api_version` | 10 |
+| 全局表 | `ISR`（同时挂到 `GLOBAL.ISR`） |
+| RPC 命名空间 | `item_slot_reservation` |
+| 组件名 | `isr_slotmarkstore` |
+| 作者 | 留空（`author = ""`） |
+
+自建模组：代码从零编写，不 require、不引用任何第三方模组的文件、资源或命名空间；模块之间只通过全局 `ISR` 表交互。标记模型只有「prefab ↔ 格子」一种，不要引入按装备部位、按物品分类之类的第二套键。
+
+---
+
+## 2. 文件结构（2978 行 Lua，18 个测试）
+
+```
+modmain.lua                 18 行，12 个 modimport，顺序有依赖（env → config → icons → storage → markstores → slotmarks → placement → candidates → debug → persistence → inventoryhooks → uihooks）
+modinfo.lua                104 行，配置项 + 双语文案
+scripts/
+  isr_env.lua              227  GLOBAL 取值兜底、按键码归一化、点击意图、prefab 键工具、i18n
+  isr_config.lua            21  读 GetModConfigData（pin_key / icon_opacity / debug_log）
+  isr_icons.lua            202  空格物品图标 + 木框渲染
+  isr_storage.lua          281  存储适配器注册表 + inventory/container 两个内置适配器
+  isr_markstores.lua        88  组件挂载、按 GUID 找 store、个人容器实例枚举
+  isr_slotmarks.lua        437  服务端标记 CRUD、匹配判定、客户端缓存、5 个 RPC handler
+  isr_placement.lua        125  放置路由决策、transfer 上下文栈
+  isr_candidates.lua       492  候选格搜索（堆叠/溢出/专用容器优先）
+  isr_debug.lua            106  自检 + 控制台标记入口
+  isr_persistence.lua      170  客户端能力白名单、全量同步、旧开发版存档迁移
+  isr_inventoryhooks.lua   276  GiveItem / GetNextAvailableSlot / Shift 转移 hook
+  isr_uihooks.lua          321  invslot / inventorybar / containerwidget 的 UI hook
+  components/isr_slotmarkstore.lua  110  标记存储组件（OnSave/OnLoad）
+tests/                      18 个 lua 测试 + run_lua_tests.py
+images/                     modicon + wood_frame_128_ARGB（木框贴图）
+```
+
+---
+
+## 3. 核心设计
+
+### 3.1 标记只有一种：prefab
+
+- 服务端组件里存 `{ slot, prefab, order }`。
+- 客户端缓存 `marks[<container_guid>:<slot>] = prefab`（字符串）。
+- RPC：`set_slot_mark(container_inst, slot, prefab)`、`sync_slot_mark(container_inst, slot, prefab, play_clear_sound)`；空串表示清除。
+- 匹配只有一条规则：`ISR.MarkMatchesItem(mark, item)` → 双方 prefab 归一化后比较。
+
+**没有 `kind` 字段、没有 `eslot` 字段、没有装备部位枚举、没有 `equipslotutil` 依赖。**
+读到 0.1.0 之前开发版的 `{ eslot = ..., kind = ... }` 旧记录时按 prefab 兼容读取；`kind == "eslot"` 的直接丢弃（`isr_slotmarkstore.lua:OnLoad`、`isr_slotmarks.lua:GetMarkPrefab`）。这是唯一的向后兼容代码，不要在此基础上恢复装备部位功能。
+
+### 3.2 「自动回位」没有搬运代码
+
+`Inventory:Unequip(eslot)` 只清空装备槽并推 `unequip` 事件，物品不落背包。真正放回背包的是调用方：
+`inventory:GiveItem(inventory:Unequip(eslot))`（游戏脚本 `scripts/actions.lua:942`、`scripts/standardcomponents.lua:1856/2083`）。
+
+所以卸下、拾取、制作完成全部经由 `GiveItem`，而 `GiveItem` 已在 `isr_inventoryhooks.lua` 里包装成「按标记直投」。
+**不要**再 hook `Unequip` 或监听 `unequip` 事件搬东西——会和 `GiveItem` 路由打架，表现为物品被移动两次。
+
+### 3.3 客户端能力白名单
+
+`all_clients_require_mod = false`，收端可能根本没装模组，往未知命名空间丢 RPC 属于噪声。
+
+- `isr_persistence.lua` 的 `ISR._capable_clients`；只有发过 ISR RPC 的玩家才算能力客户端（`ISR.MarkClientCapable`）。
+- 两个登记入口：`set_slot_mark`、`request_marks_sync`。
+- `ISR.SyncMarkToClient` / `ISR.SyncAllMarksToClient` 首行检查 `ISR.IsClientCapable`。
+- 冷启动顺序：服务端早期推送会被跳过，靠客户端 `RequestMarkSnapshot()`（0.25s 防抖）补齐 —— 这是设计内的自愈路径，不是 bug。
+
+### 3.4 点击接管只有一条路径
+
+`ISR.GetSlotMouseIntent(button)`：按住 `pin_key`（默认 V）才返回意图，否则 `nil`，原版逻辑照常执行。
+
+- 左键 → `SLOT_INTENT_PIN`；右键 → `SLOT_INTENT_CLEAR`。
+- 按钮码经 `ISR.NormalizeSlotButton` 归一化（`MOUSEBUTTON_*` ↔ `CONTROL_PRIMARY/ACCEPT/SECONDARY`）。
+- `invslot` 上 **`OnMouseButton` 和 `OnControl` 都要包**：拾取物品走 `OnControl(CONTROL_ACCEPT)`，只包鼠标挡不住点击。
+- 两路会对同一次点击各触发一次，用 `slot._isr_intent_stamp` 做 200ms 去重，否则连标两次 = 直接取消。
+
+### 3.5 悬停提示必须覆写 `GetTooltip`
+
+`Widget:GetTooltip()` 是**先遍历子 widget、再读 `self.tooltip`**：
+
+```lua
+function Widget:GetTooltip()
+    if self.focus then
+        for k, v in pairs(self.children) do
+            local str = k:GetTooltip()
+            if str ~= nil then return str end
+        end
+        return self.tooltip
+    end
+end
+```
+
+格子里有物品时，物品图 `self.tile` 是子 widget 且自带提示，**只调 `slot:SetTooltip(...)` 会被它盖掉** —— 表现就是「有物品的格子按住 V 看不到提示，空格反而正常」（0.1.0 首版的 bug，已修）。
+
+所以 `isr_uihooks.lua` 在 `AddClassPostConstruct("widgets/invslot")` 里额外覆写实例方法 `GetTooltip`：有接管串时直接返回 `_isr_tooltip_override`，否则回落原实现。新增提示逻辑照此办理，别再退回「只 SetTooltip」。
+
+提示内容（`BuildSlotTooltip`）：
+
+| 格子状态 | 提示 |
+|---|---|
+| 有物品、未固定 | `左键: 固定此格` |
+| 有物品、已固定 | `右键: 清除` |
+| 空格、已固定 | `右键: 清除` |
+| 空格、未固定 | 不接管，交回原版 |
+
+两条硬规则（用户明确要求，别再改回去）：
+
+1. **不带物品名、不带括号**。格子里已经画出物品，重复名字没有信息量。
+2. **已固定的格子不提示左键**。此时左键是取消固定，写「取消固定」是噪音；只保留右键清除。
+
+取 prefab 只为判断「格子里有没有东西」：`GetSlotItemPrefab` 依次尝试 `container:GetItemInSlot` → `container.itemslots` → `container.slots`。
+
+---
+
+## 4. 数据流
+
+```
+客户端按住 V 点格
+  → PinClientSlotMark：读格中物品 prefab，写本地缓存（乐观显示图标）
+  → set_slot_mark RPC
+  → 服务端校验（prefab 合法 / 容器可标记 / 槽位在范围 / 格子为空或格中物品与标记匹配）
+  → 存进容器实体的 isr_slotmarkstore
+  → 回推 sync_slot_mark 覆盖客户端缓存（客户端以服务端为准）
+
+物品要进包
+  → GiveItem 包装 → MakePlacementContext
+  → ShouldRoutePlacementByMarks：这个物品有预留格吗？
+  → 有：按 order 依次尝试 GetSortedServerMarksForPrefab 的格子，落位成功即 return true
+  → 没有 / 落位失败：走原版逻辑
+  → 原版 GetNextAvailableSlot 也包了一层，跳过别人的预留格
+```
+
+标记存在**容器实体**上（玩家 = 玩家实体，背包 = 背包实体），不存玩家身上。背包丢地上被捡走，标记跟着背包走 —— 设计选择。
+
+---
+
+## 5. 操作与配置
+
+| 操作 | 默认键位 |
+|---|---|
+| 固定 / 取消固定（点已有物品的格子） | `V` + 左键 |
+| 清除标记（不要求格子为空） | `V` + 右键 |
+| 控制台预留 | `ISR.DebugSetPrefabMark(3, "cutgrass")`，背包 `(2, "twigs", true)` |
+| 控制台清除 | `ISR.DebugClearSlotMark(3)` |
+
+配置项（`isr_config.lua` 读）：`pin_key`（V/B/N/G/NONE）、`icon_opacity`（0~1，默认 0.35）、`debug_log`。
+
+**不要**再加 `mark_modifier` / `prefab_mark` 这类选项：早期开发版曾用组合键循环标记、并用开关控制物品标记，0.1.0 已把它们删掉，只剩「按住固定键点格子」一条路径。
+
+---
+
+## 6. 本地环境
+
+- 仓库：本目录即 git 仓库根，模组文件就在根目录（不含 `dist/`、`.workbuddy/`、`.lua-test-runtime/`）
+- 游戏加载路径：**创意工坊 `workshop-3830575143`**（2026-10-31 上传并订阅）。`ForceEnableMod` 已移除，存档 `modoverrides` 已改为 `["workshop-3830575143"]`
+- **发布源是工作区根的 `Item-slot-reservation\` 文件夹**，不在本仓库内。更新版本时改那里的 `modinfo.lua` 与脚本，再由维护者在游戏内 Upload。
+- **不要把发布目录复制进 `mods\item-slot-reservation\`**。工坊订阅版已加载，多一份本地副本会让模组列表出现两个同名条目。上传后 Steam 自动拉取到 `workshop\content\322330\3830575143\`，无需手动同步缓存。
+- 工坊不接受同版本覆盖：每次 Upload 前必须升 `modinfo.lua` 的 `version`。
+- 启用方式：各存档 `modoverrides.lua` 勾选工坊 id；不再用 `ForceEnableMod`（会与工坊版本重复加载）
+- 改完代码必须**同时重启客户端和两个 dedicated server 进程**：服务端是独立进程，只重启客户端加载不到服务端改动
+- 日志：`Documents\Klei\DoNotStarveTogether\client_log.txt` / `master_server_log.txt`，标签 `[ItemSlotReservation]`，需在设置里开「调试日志」
+
+---
+
+## 7. 跑测试
+
+```bash
+# lupa 装在仓库外，用 ISR_LUPA_PATH 指过去（缺省回退到父目录下的 .lua-test-runtime）
+export ISR_LUPA_PATH="$HOME/.lua-test-runtime"
+# lupa 的 io.open 读不了中文路径 → 复制到纯 ASCII 目录再跑
+cp -r . /tmp/isrtest && cd /tmp/isrtest && python tests/run_lua_tests.py
+```
+
+两个坑：
+
+1. lupa 不在仓库里（避免把二进制依赖提交进 git）；`run_lua_tests.py` 依次找 `ISR_LUPA_PATH` 环境变量、`tests/../.lua-test-runtime`、工作区级的 `../../.lua-test-runtime`。
+2. lupa 2.8（Lua 5.5）的 `io.open` 读不了中文路径 → 必须复制到纯 ASCII 目录再跑。
+
+2026-10-31 实测：`PASS 18 test files`。新增/改动功能时同步补 `tests/test_*.lua`，跑了再交付。
+
+---
+
+## 8. 风险
+
+- **Hook 面很宽**：`GiveItem`、`GetNextAvailableSlot`、`MoveItemFrom*`、`invslot.OnMouseButton`、`invslot.OnControl`、`containerwidget` / `inventorybar`。与容器扩容、自动整理、Shift 增强类模组冲突概率高，表现是「物品进错格」而不是崩溃。
+- **未装客户端的玩家看不到预留**：体验不对称。要对称就把 `all_clients_require_mod` 改回 `true`。
+- **全满分支**：`ignoreoverflow` 临时置 true 期间物品会掉地上，与原版不同。
+- 沙箱限制：mod 环境里 `setmetatable/pcall/tonumber/next` 等为 nil，走 `GLOBAL`；禁止 `io.open` 写盘（引擎 2025-01 起只读）。
+- 许可证：MIT（见 `LICENSE`）。
+
+---
+
+## 9. 回滚
+
+```bash
+# 停用：mods\modsettings.lua 里注释掉 ForceEnableMod("item-slot-reservation")，或 Mods 菜单取消勾选
+# 删除：删掉 mods\item-slot-reservation\ 目录即可；存档残留的标记数据无人读取，不会报错
+```
+
+---
+
+## 9.5 多人环境：客户端必须加载模组才能用（重要）
+
+**结论：`all_clients_require_mod = true`（2026-10-31 由 false 改来）。** 朋友订阅后进服，游戏会自动临时启用本模组，无需手动操作。
+
+为什么要改（引擎限制，不是实现问题）：
+
+| 事实 | 依据 |
+|---|---|
+| 订阅 ≠ 启用。`GetModsToLoad()` 只加载本地 `enabled` / `forceenabled` / `temp_enabled` 的模组 | `scripts/modindex.lua` |
+| 主菜单 Mods 界面的「服务器模组」页签是**只读**，条目 `SetModReadOnly(true)`，点不动 | `screens/redux/modsscreen.lua` 的 `are_servermods_readonly = true` |
+| 只有「创建世界 → Mods」界面把该标志设为 false，才能勾选服务器模组 | `screens/redux/servercreationscreen.lua` 的 `are_servermods_readonly = false` |
+| `all_clients_require_mod = true` 时，客户端进服会按服务器下发的模组表自动 `temp_enable` 并提示重启一次 | `mods.lua` 的 `GetEnabledModsModInfoDetails` |
+
+所以 `false` 的实际效果不是「谁都能用」，而是「除房主外谁都**用不了**」——客户端的 UI 接管、按 V 判定、RPC 发送全在客户端代码里，没加载就只有服务端半截在跑。
+
+改为 `true` 的代价：没订阅的玩家进不了房间（游戏弹订阅提示，点一下自动订阅下载）。
+
+排查朋友端：他的 `client_log.txt` 里必须出现 `Loading mod: workshop-3830575143`。没有这行就是客户端没加载。
+
+## 10. 贴图（KTEX）怎么生成
+
+本机没有 ktools，改封面/图标不用装工具，Python + Pillow 直接写 `.tex`。
+
+格式（未压缩 RGBA，PC 平台），以 `images/modicon.tex` 为例：
+
+```
+88 字节头    magic "KTEX" + platform 0xFFFD0240 + 宽高 + 8 级 mipmap 描述表
+            （128x128 连续 mip 链时头长恰为 88）
+87380 字节   RGBA8 像素：128² + 64² + 32² + 16² + 8² + 4² + 2² + 1² 各 4 字节
+总计 87468
+```
+
+生成办法：拿同尺寸的旧 tex 取前 88 字节当模板头，后面整段替换成新像素 + mip 链。
+
+验证：读回 `.tex` 的 `data[88:88+128*128*4]` 按 RGBA 解成图，与原 PNG 做 `ImageChops.difference`，`bbox == None` 即结构正确。
+
+配套 `images/<名>.xml`：`<Element name="modicon.tex" u1="0.00390625" u2="0.99609375" v1=... v2=... />`，
+半像素内缩（1/256）避免边缘渗色。`0 1 0 1` 也能显示，但贴边会露相邻像素。
+
+参考提交 `3cdb125`（封面替换）：截图裁 201x201 正方 → 128x128 → 顶部压暗 → 写 tex。
+
+**游戏会自己把未压缩 tex 压成 DXT5。** 手写的 87468 字节 RGBA 版放进 `mods\` 后，游戏启动时把它重编码成同尺寸的 DXT5（BC3）：
+
+| 项 | 手写未压缩版 | 游戏压缩后 |
+|---|---|---|
+| 文件大小 | 87468 | 21960（-74.9%） |
+| 像素段 | 87380（RGBA8 全 mip） | 21872（DXT5 全 mip，正好 1/4） |
+| platform 字段 | `0xFFFD0240` | `0xFFFD0220` |
+| 头长度 / mip 级数 / 分辨率 | 88 / 8 / 128² | 完全相同 |
+
+压缩是有损的：解码 mip0 与原 PNG 比 PSNR **35.4 dB**，最大单通道误差 55（出现在物品栏的高对比边缘），肉眼基本无差分。`wood_frame_128_ARGB.tex` 本来就是这种 DXT5 格式，两者现在同构。
+
+**发布时直接用游戏压缩后的 tex**（体积 1/4，工坊下载更快），仓库里 `images/modicon.png` 保留无损源图，改封面时按上面的办法从 png 重新生成即可。
