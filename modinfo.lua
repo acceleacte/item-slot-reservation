@@ -1,13 +1,13 @@
 name = "Item Slot Reservation"
 description = [[
-版本 0.1.4
+版本 0.1.5
 
 物品格预留（Item Slot Reservation）把储物格固定给指定物品。
 基本能放进物品栏的都能固定：草、树枝、木头、石头等材料，武器、工具、帽子等装备。
 
 固定之后：
 - 该物品被拾取、制作完成、或从装备栏卸下时，自动回到固定的格子。
-- 只有容器里还留着固定格时，拾取到的物品会直接进那个容器（切斯特、背包、桶），并播放拾取音效；可在模组设置里用「拾取后放回容器」关掉。
+- 容器里还留着固定格时，拾取到的物品会直接进那个容器并播放拾取音效。玩家身上的背包（袋子、背包里的桶）永远如此，不受设置影响；「拾取后放回容器」开关（默认关闭）只控制世界里的容器（切斯特、基地箱子）。
 - 世界里的容器（基地箱子、跟随中的切斯特）只有在你身边时才接收，距离阈值在设置里选「近 / 中 / 远」；随身携带的容器不受限制。
 - 其它物品不会占用这一格；格子被手动塞进别的东西时，预留会自动解除。
 - 只能放物品栏的物品（以太余烬、沃拓克斯灵魂）不受预留限制，照常进物品栏。
@@ -19,14 +19,14 @@ description = [[
 
 --------------------------------
 
-Version 0.1.4
+Version 0.1.5
 
 Item Slot Reservation fixes storage slots to specific items.
 Anything that fits in the inventory can be fixed: grass, twigs, logs, stone and other materials; weapons, tools, hats and other equipment.
 
 Once fixed:
 - The item returns to its fixed slot when picked up, crafted, or unequipped.
-- When a fixed slot for it still exists inside a container, the picked-up item goes straight into that container (Chester, a backpack, a tackle box) and plays the pickup sound. Turn this off with the "Pickup into containers" mod option.
+- When a fixed slot for it still exists inside a container, the picked-up item goes straight into that container and plays the pickup sound. A container carried on your body (backpack, sack, a tackle box inside it) always does this regardless of the option; the "Pickup into containers" option (off by default) only governs containers standing in the world, such as Chester or a base chest.
 - Containers in the world (a base chest, a following Chester) only receive items while you are close enough; pick Near / Medium / Far in the mod options. Containers you carry are not limited.
 - Other items do not occupy the slot; forcing another item in clears the reservation.
 - Pocket-only items (Ethereal Embers, Wortox Souls) ignore reservations and always go to the inventory.
@@ -37,7 +37,7 @@ Hold V and left-click a slot that holds an item to fix it; click again to clear.
 Reservations are saved with the container and survive save/load and shard travel.
 ]]
 author = "acceleacte"
-version = "0.1.4"
+version = "0.1.5"
 api_version = 10
 dst_compatible = true
 dont_starve_compatible = false
@@ -94,13 +94,13 @@ configuration_options =
     {
         name = "pickup_to_container",
         label = "Pickup into containers / 拾取后放回容器",
-        hover = "On: an item picked up goes straight into its fixed slot inside Chester, a backpack, a tackle box and so on.\nOff: only slots fixed in the player's own inventory receive the item; fixed slots inside containers just stay reserved.\n开启：拾取到的物品直接回到切斯特、背包、桶等容器里固定的那一格，省去捡起再放回去的步骤。\n关闭：只有玩家物品栏里固定的格子会接收物品，容器内的固定格仅保留占位。",
+        hover = "On: an item picked up goes straight into its fixed slot inside Chester, a tackle box and so on. Off (default): only slots on the player receive the item — the inventory plus any container carried on the body (backpack, sack, a tackle box inside it); containers standing in the world, such as Chester, just stay reserved.\n开启：拾取到的物品直接回到切斯特、桶等世界容器里固定的那一格。关闭（默认）：只有玩家身上的固定格会接收物品（物品栏 + 随身容器：背包、袋子、背包里的桶）；世界里的容器（切斯特、基地箱子）内的固定格仅保留占位。",
         options =
         {
             { description = "On / 开启", data = true },
             { description = "Off / 关闭", data = false },
         },
-        default = true,
+        default = false,
     },
     {
         name = "container_range",

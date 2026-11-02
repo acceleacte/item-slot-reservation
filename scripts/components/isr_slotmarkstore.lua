@@ -119,16 +119,17 @@ function SlotMarkStore:OnSave()
         return a.slot < b.slot
     end)
 
+    -- 不要写 add_component_if_missing。
+    -- 引擎（entityscript.lua:1980）读到这个标记会对存档里缺组件的实体强制
+    -- AddComponent，组件由本模组提供：玩家一关模组，require 抛错，异常直接打断
+    -- SpawnSaveRecord → PopulateWorld，存档再也进不去（2026-11-02 实测切斯特必崩）。
+    -- 现在改由 isr_markstores 在所有 container 实体构造时挂组件，读档时组件天然存在，
+    -- 不需要引擎补建；模组关闭时引擎找不到组件就静默跳过这份数据。
     return
     {
         marks = records,
         next_order = self.next_order,
         owner = self.owner,
-        -- 容器 prefab 不一定在 AddComponent("container") 时就带 inventoryitem
-        -- （原版 beargerrfur_sack 是先 container、后 inventoryitem），这种实体构造时
-        -- 没有本组件，存档数据会被 EntityScript:SetPersistData 直接丢掉。
-        -- 带上这个标记，引擎会在读到数据时自动补建组件再 OnLoad。
-        add_component_if_missing = true,
     }
 end
 

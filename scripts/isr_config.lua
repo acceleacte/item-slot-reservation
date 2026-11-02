@@ -5,8 +5,9 @@ ISR.Config =
     icon_opacity = ISR.ToNumber(GetModConfigData("icon_opacity")) or 0.35,
     debug_log = GetModConfigData("debug_log") == true,
     pin_key = ISR.NormalizeConfigValue(GetModConfigData("pin_key"), ISR.ValidPinKeyOptions, "V"),
-    -- 拾取后是否直接放回容器（切斯特、背包里的桶……）。没配过（旧存档）按开启处理。
-    pickup_to_container = GetModConfigData("pickup_to_container") ~= false,
+    -- 拾取后是否放回世界里的容器（切斯特、基地箱子）。默认关闭，modinfo 的 default 说了算；
+    -- 玩家身上的容器（背包、袋子、背包里的桶）不受这个开关影响，始终接收。
+    pickup_to_container = GetModConfigData("pickup_to_container") == true,
     -- 容器作用距离：近 / 中 / 远。只限制世界里的容器，随身携带的容器不受影响。
     container_range = ISR.NormalizeConfigValue(GetModConfigData("container_range"), ISR.ValidContainerRangeOptions, "medium"),
 }

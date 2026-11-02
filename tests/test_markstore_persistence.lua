@@ -20,7 +20,8 @@ end
 local SlotMarkStore = dofile(ISR_TEST_ROOT.."/scripts/components/isr_slotmarkstore.lua")
 
 -- 复刻 scripts/entityscript.lua 的 GetPersistData / SetPersistData 关键分支。
--- 组件在实体上不存在时，只有数据自己带 add_component_if_missing 才会被补建。
+-- 组件在实体上不存在时，只有数据自己带 add_component_if_missing 才会被补建；
+-- 补建走 require("components/<name>")，组件由本模组提供，模组关掉就抛错。
 local function GetPersistData(inst)
     local data = {}
     for name, comp in pairs(inst.components) do
@@ -69,34 +70,52 @@ local function NewEntity(guid, with_store)
     return inst
 end
 
--- 存档的数据必须能让引擎自己补回组件（原版 beargerrfur_sack 是先 container、
--- 后 inventoryitem，构造时判不到 inventoryitem，组件不会被预先挂上）。
+-- 1. 存档数据不得带 add_component_if_missing。
+-- 带上去 = 引擎读档时强制 AddComponent → 玩家关掉模组后 require 失败 → 读档中断。
 local sack = NewEntity(100, true)
 sack.components.isr_slotmarkstore:SetMark(3, "twigs", 1)
 local saved = GetPersistData(sack)
 assert_equal(saved.isr_slotmarkstore ~= nil, true, "mark data is written to the save record")
-assert_equal(saved.add_component_if_missing, true, "save record asks the engine to restore the component")
+assert_equal(saved.isr_slotmarkstore.add_component_if_missing, nil, "component data must not carry add_component_if_missing")
+assert_equal(saved.add_component_if_missing, nil, "save record must not ask the engine to rebuild components")
 
--- 读档：构造时没有组件，数据仍然要被应用
-local restored = NewEntity(101, false)
-assert_equal(restored.components.isr_slotmarkstore, nil, "prefab without inventoryitem has no mark store at spawn")
-SetPersistData(restored, saved)
-assert_equal(restored.components.isr_slotmarkstore ~= nil, true, "missing component is created on load")
-assert_equal(restored.components.isr_slotmarkstore:GetMark(3).prefab, "twigs", "mark survives the reload")
+-- 2. 模组启用中：组件由 isr_markstores 在构造期挂上，数据正常加载。
+local enabled = NewEntity(101, true)
+SetPersistData(enabled, saved)
+assert_equal(enabled.components.isr_slotmarkstore:GetMark(3).prefab, "twigs", "mark survives the reload while the mod is enabled")
 
--- 组件本来就在的实体不受影响（正常背包、箱子）
-local plain = NewEntity(102, true)
-SetPersistData(plain, saved)
-assert_equal(plain.components.isr_slotmarkstore:GetMark(3).prefab, "twigs", "existing component still loads")
+-- 3. 模组被关掉：实体没有组件，数据里也没有重建标记 → 引擎静默跳过，不抛错。
+local uninstalled = NewEntity(102, false)
+local ok, err = pcall(SetPersistData, uninstalled, saved)
+assert_equal(ok, true, "loading the save without the mod must not raise"..tostring(err))
+assert_equal(uninstalled.components.isr_slotmarkstore, nil, "no component is rebuilt when the mod is disabled")
 
--- 空存档不写数据，也不带 add_component_if_missing
-local empty = NewEntity(103, true)
+-- 4. 旧存档（0.1.3 及以前写的数据带 flag）：组件已存在时不重复补建，数据照常加载。
+--    进一次世界并保存，旧 flag 就被洗掉，迁移完成。
+local legacy_data =
+{
+    isr_slotmarkstore =
+    {
+        marks = { { slot = 2, prefab = "grass", order = 1 } },
+        next_order = 1,
+        add_component_if_missing = true,
+    },
+    add_component_if_missing = true,
+}
+local legacy = NewEntity(103, true)
+SetPersistData(legacy, legacy_data)
+assert_equal(legacy.components.isr_slotmarkstore:GetMark(2).prefab, "grass", "legacy record still loads when the component exists")
+local legacy_resaved = GetPersistData(legacy)
+assert_equal(legacy_resaved.add_component_if_missing, nil, "re-saving a legacy record drops the rebuild flag")
+
+-- 5. 空存档不写数据，也不带 add_component_if_missing。
+local empty = NewEntity(104, true)
 local empty_saved = GetPersistData(empty)
 assert_equal(empty_saved.isr_slotmarkstore, nil, "empty store writes nothing")
 assert_equal(empty_saved.add_component_if_missing, nil, "empty store sets no recovery flag")
 
--- 没有存档数据时 OnLoad 不得清空内存里的标记
-local keep = NewEntity(104, true)
+-- 6. 没有存档数据时 OnLoad 不得清空内存里的标记。
+local keep = NewEntity(105, true)
 keep.components.isr_slotmarkstore:SetMark(2, "grass", 1)
 keep.components.isr_slotmarkstore:OnLoad(nil)
 assert_equal(keep.components.isr_slotmarkstore:GetMark(2).prefab, "grass", "OnLoad(nil) keeps in-memory marks")

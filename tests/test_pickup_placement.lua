@@ -22,6 +22,10 @@ ISR =
     GetStorageAdapter = function(storage)
         return storage ~= nil and storage.adapter or nil
     end,
+    -- 真要判归属得看 owner 链，测试里用 carried 标记代替（判定本身在 test_container_range.lua）。
+    IsStorageCarriedByPlayer = function(owner, storage)
+        return storage ~= nil and storage.carried == true
+    end,
     PlayPickupSound = function(owner, item)
         table.insert(pickup_sounds, item.prefab)
     end,
@@ -72,7 +76,7 @@ assert_equal(owner.storages[900].placed.item, sack, "the picked up item is the o
 assert_equal(#pickup_sounds, 1, "placing into a container plays the pickup sound")
 assert_equal(pickup_sounds[1], "beargerfur_sack", "the sound follows the item prefab")
 
--- 关掉开关：容器标记不参与，物品回玩家物品栏的固定格
+-- 关掉开关：世界里的容器（切斯特）不参与，物品回玩家物品栏的固定格
 ISR.Config.pickup_to_container = false
 owner.storages[900].placed = nil
 pickup_sounds = {}
@@ -83,16 +87,42 @@ assert_equal(off_slot, 8, "the player's own fixed slot is chosen")
 assert_equal(owner.storages[900].placed, nil, "the container is left alone")
 assert_equal(#pickup_sounds, 0, "the inventory adapter does not play a pickup sound")
 
--- 只有容器标记时，关掉开关就不再自动吸进容器
+-- 只有世界容器的标记时，关掉开关就不再自动吸进去
 owner.marks.beargerfur_sack = { chesterslot }
 ISR.Config.pickup_to_container = false
 assert_equal(ISR.TryPlaceByMarks(ISR.MakePlacementContext({ owner = owner, inventory = inventory, item = sack })), false,
-    "container-only marks are ignored while the option is off")
+    "world container marks are ignored while the option is off")
 
 -- 重新打开后回到容器
 ISR.Config.pickup_to_container = true
 assert_equal(ISR.TryPlaceByMarks(ISR.MakePlacementContext({ owner = owner, inventory = inventory, item = sack })), true,
     "container marks apply again once the option is back on")
+
+-- 玩家身上的背包不受开关影响：关掉也照样吸回固定格
+local pack = NewStorage(902, "container")
+pack.carried = true
+owner.storages[902] = pack
+local packslot = { container_guid = 902, slot = 5, prefab = "beargerfur_sack", order = 1 }
+
+ISR.Config.pickup_to_container = false
+owner.storages[900].placed = nil
+owner.storages[902].placed = nil
+owner.marks.beargerfur_sack = { chesterslot, packslot }
+pickup_sounds = {}
+local pack_result, pack_slot = ISR.TryPlaceByMarks(ISR.MakePlacementContext({ owner = owner, inventory = inventory, item = sack }))
+assert_equal(pack_result, true, "a carried container still receives pickups while the option is off")
+assert_equal(pack_slot, 5, "the carried container slot is the landing slot")
+assert_equal(owner.storages[900].placed, nil, "the world container stays untouched while the option is off")
+assert_equal(#pickup_sounds, 1, "placing into the carried container plays the pickup sound")
+
+-- 随身容器和物品栏都固定了同一种物品：随身容器优先（和开启时一致）
+owner.storages[902].placed = nil
+owner.marks.beargerfur_sack = { inventoryslot, packslot }
+local both_result, both_slot = ISR.TryPlaceByMarks(ISR.MakePlacementContext({ owner = owner, inventory = inventory, item = sack }))
+assert_equal(both_result, true, "the carried container beats the inventory slot")
+assert_equal(both_slot, 5, "the carried container slot wins even with a later order")
+
+ISR.Config.pickup_to_container = true
 
 -- 容器自己给物品（STORE / 掉落）不是拾取，不能响
 owner.marks.beargerfur_sack = { inventoryslot, chesterslot }

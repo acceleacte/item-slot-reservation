@@ -45,6 +45,10 @@ carried.components.inventoryitem = { GetGrandOwner = function() return player en
 assert_equal(ISR.IsStorageWithinRange(player, { inst = carried }), true,
     "a carried container is always in range")
 
+-- 「随身」判定单独可用：背包 true，切斯特 / 基地箱子 false
+assert_equal(ISR.IsStorageCarriedByPlayer(player, { inst = player }), true, "the inventory itself counts as carried")
+assert_equal(ISR.IsStorageCarriedByPlayer(player, { inst = carried }), true, "a backpack on the player counts as carried")
+
 -- 世界里的箱子：按距离
 local chest = NewEntity(3, 20, 0)
 chest.components.inventoryitem = { GetGrandOwner = function() return nil end }
@@ -56,6 +60,8 @@ local chester = NewEntity(4, 5, 0)
 assert_equal(ISR.IsStorageWithinRange(player, { inst = chester }), true, "a following Chester next to you is in range")
 chester.Transform = { GetWorldPosition = function() return 30, 0, 0 end }
 assert_equal(ISR.IsStorageWithinRange(player, { inst = chester }), false, "a Chester left behind is out of near range")
+assert_equal(ISR.IsStorageCarriedByPlayer(player, { inst = chester }), false, "a following Chester is not carried")
+assert_equal(ISR.IsStorageCarriedByPlayer(player, { inst = chest }), false, "a chest in the world is not carried")
 
 -- 装在容器里的容器（limbo）：没有世界坐标，按宿主容器算距离
 local nested_in_chest = NewEntity(5, 0, 0)

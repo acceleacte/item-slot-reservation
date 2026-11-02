@@ -9,7 +9,7 @@
 | 项 | 值 |
 |---|---|
 | 模组名 | Item Slot Reservation |
-| 版本 | 0.1.4（`modinfo.lua`） |
+| 版本 | 0.1.41（`modinfo.lua`） |
 | 类型 | 服务器模组，`all_clients_require_mod = true`（2026-10-31 由 false 改来，见 §9.5），`client_only_mod = false` |
 | `api_version` | 10 |
 | 全局表 | `ISR`（同时挂到 `GLOBAL.ISR`） |
@@ -21,7 +21,7 @@
 
 ---
 
-## 2. 文件结构（4001 行 Lua，29 个测试）
+## 2. 文件结构（4000 行 Lua，29 个测试）
 
 ```
 modmain.lua                 19 行，13 个 modimport，顺序有依赖（env → config → icons → storage → markstores → slotmarks → placement → candidates → debug → persistence → inventoryhooks → clientpredict → uihooks）
@@ -30,10 +30,10 @@ scripts/
   isr_env.lua              244  GLOBAL 取值兜底、按键码归一化、点击意图、prefab 键工具、距离档位、i18n
   isr_config.lua            27  读 GetModConfigData（pin_key / icon_opacity / debug_log / pickup_to_container / container_range）
   isr_icons.lua            202  空格物品图标 + 木框渲染
-  isr_storage.lua          472  存储适配器注册表 + 内置适配器 + 容器归属判定 + 作用距离
+  isr_storage.lua          483  存储适配器注册表 + 内置适配器 + 容器归属判定 + 作用距离
   isr_markstores.lua       153  组件挂载、按 GUID 找 store、标记容器注册表、随身实例递归枚举
   isr_slotmarks.lua        490  服务端标记 CRUD、匹配判定、客户端缓存、拾取音效、5 个 RPC handler
-  isr_placement.lua        198  放置路由决策、标记优先级（容器 / 物品栏）、距离过滤、transfer 上下文栈
+  isr_placement.lua        205  放置路由决策、标记优先级（容器 / 物品栏）、距离过滤、transfer 上下文栈
   isr_candidates.lua       521  候选格搜索（堆叠/溢出/专用容器优先）
   isr_debug.lua            106  自检 + 控制台标记入口
   isr_persistence.lua      390  客户端能力白名单、全量同步、旧开发版存档迁移、玩家级标记备份（含嵌套路径）
@@ -192,7 +192,7 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 深度上限 `ISR.PERSONAL_STORAGE_DEPTH = 3`：玩家(1) → 物品栏容器(2) → 容器里的容器(3)。`GetPersonalStorageInstances`（备份路径用）按这个上限递归，带 `seen` 防环。
 
-备份路径支持嵌套：`equip:back/3` = 装备栏背包第 3 格的容器；`ISR.ResolveStoragePath` 按 `/` 分段还原。跟随型容器没有稳定路径（不在物品栏里），备份跳过它，读档靠 `add_component_if_missing` 自愈。
+备份路径支持嵌套：`equip:back/3` = 装备栏背包第 3 格的容器；`ISR.ResolveStoragePath` 按 `/` 分段还原。跟随型容器没有稳定路径（不在物品栏里），备份跳过它，靠组件本身持久化恢复（见 §4.1 第 1 层）。
 
 别把客户端判定改成「有 `replica.container` 就认」：没打开过的容器也有 `replica.container` 壳子，`GetNumSlots()` 返回 0，那样谁都能点。
 
@@ -202,8 +202,10 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 | 配置 | 行为 |
 |---|---|
-| 开启（默认） | 容器内标记排前面（同类内部仍按 `order`），玩家物品栏标记排后面。拾取到的东西直接进容器 |
-| 关闭 | 容器内标记整条不参与，只用玩家物品栏标记；物品栏没有可用固定格就交回原版落点 |
+| 开启 | 世界容器与随身容器的标记都参与：容器内标记排前面（同类内部仍按 `order`），玩家物品栏标记排后面。拾取到的东西直接进容器 |
+| 关闭（默认） | **世界里的容器**（切斯特、哈奇、基地箱子）标记不参与；玩家身上的容器（背包、克朗普斯袋子、背包里的桶）标记照常参与，顺序同「开启」；都没有可用固定格就交回原版落点 |
+
+**随身容器不受开关控制**（2026-11-02 用户指定）：背包是玩家的延伸，关了开关也得自动回位。判定在 `isr_placement.lua` 的 `IsCarriedContainerMark` → `ISR.IsStorageCarriedByPlayer`（`isr_storage.lua`，只认 owner 链：`inst == player` 或 `inventoryitem:GetGrandOwner() == player`）。切斯特、哈奇是 follower 不是 carried，仍归开关管 —— 别把这条判定换成 `IsStorageOwnedByPlayer`，那个对切斯特也返回真。
 
 排序在 `isr_placement.lua` 的 `OrderMarksForConfig`，`IsOwnInventoryMark` 判 `mark.container_guid == owner.GUID`。
 
@@ -252,11 +254,15 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 | 层 | 位置 | 作用 |
 |---|---|---|
-| 1 组件自愈 | `isr_slotmarkstore:OnSave` 返回表带 `add_component_if_missing = true` | 容器 prefab 不保证「inventoryitem 先、container 后」：原版 `beargerfur_sack` 第 190 行 AddComponent("container")、第 201 行才 AddComponent("inventoryitem")；`tacklecontainer`（含 `supertacklecontainer`）是 103 / 112。`AddComponentPostInit("container")` 那一刻判不到 inventoryitem，store 不会被挂上。读档时 `EntityScript:SetPersistData` 找不到组件就直接丢弃数据。带这个 flag 后引擎先补建组件再 OnLoad（`entityscript.lua:1980`、`:2011`）。 |
-| 2 玩家级备份 | `isr_persistence.lua` 的 `ISR.MARK_BACKUP_KEY`（`isr_slot_marks`） | `player:OnSave` 把随身容器的标记按「在身上的位置」写成快照：`inv` = 玩家自身、`inv:<N>` = 物品栏第 N 格、`equip:<槽>` = 装备栏某槽，嵌套用 `/` 接（`equip:back/3` = 装备栏背包第 3 格的容器）。`OnLoad` 之后按位置补回**空缺**的格，已有标记优先、不覆盖。兜住跨 shard 时引擎没搬过来的数据。跟随型容器（切斯特、哈奇）没有稳定路径，备份跳过，靠第 1 层自愈。 |
+| 1 构造期挂载 | `isr_markstores.lua` 的 `AddComponentPostInit("container")`，**无条件**给容器实体挂 store | 所有 `container` 实体（背包、桶、切斯特、哈奇、箱子、锅）在 prefab 构造期就带 `isr_slotmarkstore`，读档时 `EntityScript:SetPersistData` 里组件天然存在，数据直接 `OnLoad`。顺带覆盖两类顺序颠倒的 prefab：`beargerfur_sack`（第 190 行 container、第 201 行才 inventoryitem）、`tacklecontainer`（103 / 112）。空 store `OnSave` 返回 nil，不产生存档数据。 |
+| 2 玩家级备份 | `isr_persistence.lua` 的 `ISR.MARK_BACKUP_KEY`（`isr_slot_marks`） | `player:OnSave` 把随身容器的标记按「在身上的位置」写成快照：`inv` = 玩家自身、`inv:<N>` = 物品栏第 N 格、`equip:<槽>` = 装备栏某槽，嵌套用 `/` 接（`equip:back/3` = 装备栏背包第 3 格的容器）。`OnLoad` 之后按位置补回**空缺**的格，已有标记优先、不覆盖。兜住跨 shard 时引擎没搬过来的数据。跟随型容器（切斯特、哈奇）没有稳定路径，备份跳过，靠第 1 层。 |
 | 3 加载期不清除 | `isr_inventoryhooks.lua` 的 `IsStorageLoading` | 原版 `Inventory:OnLoad` / `Container:OnLoad` 会用存档槽位号调 `GiveItem`，包装里「物品与标记不符就清标记」在加载中是误伤。`Container:OnLoad` 期间置 `_isr_loading`，`Inventory` 用原版已有字段 `isloading`，两者都跳过清除。 |
 
-**不要**把第 1 层换成「无条件给所有容器挂 store」：世界容器（箱子、锅、切斯特）数量大，且它们本来就不允许标记，白挂组件没收益。也不要给 `MakeInventoryPhysics` 之后补 hook —— 它只加物理，不加 inventoryitem（`standardcomponents.lua`）。
+**存档数据里禁止写 `add_component_if_missing`**（0.1.5 起）。这个 flag 会让引擎在缺组件时强制 `AddComponent`（`entityscript.lua:1980`），而组件由本模组提供：玩家一关模组，`require` 抛错打断 `SpawnSaveRecord` → `PopulateWorld`，**存档永久进不去**（2026-11-02 实测切斯特必崩，`master_server_log.txt` 报 `module 'components/isr_slotmarkstore' not found`）。不带 flag 时模组关闭只会让这份数据被静默跳过，世界照常加载。
+
+**旧版（≤0.1.41）存档的迁移**：旧数据带 flag。0.1.5 进档时组件已在（第 1 层），`components[k] == nil` 不成立，引擎不会补建，所以不崩；保存一次后数据被重写成无 flag 格式，迁移完成。迁移前不能关模组。README「注意」一节对玩家写了同样的话。
+
+**曾经试过、后来否掉**：组件只在「container 且已有 inventoryitem」时挂，靠 flag 自愈补建 —— 这就是不可卸载的来源。也不要给 `MakeInventoryPhysics` 之后补 hook，它只加物理、不加 inventoryitem（`standardcomponents.lua`）。
 
 诊断（`debug_log=true`）：读档后打 `Mark backup restored restored=N kept=M missing_container=K`。
 
@@ -271,7 +277,7 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 | 控制台预留 | `ISR.DebugSetPrefabMark(3, "cutgrass")`，背包 `(2, "twigs", true)` |
 | 控制台清除 | `ISR.DebugClearSlotMark(3)` |
 
-配置项（`isr_config.lua` 读）：`pin_key`（V/B/N/G/NONE）、`icon_opacity`（0~1，默认 0.35）、`debug_log`、`pickup_to_container`（默认 true，关掉后容器内固定格不再自动吸入物品）、`container_range`（near / medium / far，默认 medium）。
+配置项（`isr_config.lua` 读）：`pin_key`（V/B/N/G/NONE）、`icon_opacity`（0~1，默认 0.35）、`debug_log`、`pickup_to_container`（默认 false；只管世界容器，随身容器永远接收）、`container_range`（near / medium / far，默认 medium）。
 
 **不要**再加 `mark_modifier` / `prefab_mark` 这类选项：早期开发版曾用组合键循环标记、并用开关控制物品标记，0.1.0 已把它们删掉，只剩「按住固定键点格子」一条路径。
 

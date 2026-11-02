@@ -143,30 +143,41 @@ local function GetWorldDistance(a, b)
     return math.sqrt(dx * dx + dz * dz)
 end
 
+-- 容器的宿主：装着它的物品栏 / 容器实体。世界里的箱子、跟随中的切斯特没有宿主。
+local function GetStorageHolder(storage)
+    local inst = storage ~= nil and (storage.inst or storage) or nil
+    local inventoryitem = inst ~= nil and inst.components ~= nil and inst.components.inventoryitem or nil
+    if inventoryitem == nil then
+        return nil
+    end
+
+    return inventoryitem.GetGrandOwner ~= nil and inventoryitem:GetGrandOwner() or inventoryitem.owner
+end
+
+-- 容器是否挂在玩家身上（物品栏、装备栏、背包里的桶……）。
+-- 只看 owner 链：世界里的箱子、跟随中的切斯特/哈奇都不算 —— 它们按距离判。
+function ISR.IsStorageCarriedByPlayer(owner, storage)
+    if owner == nil or storage == nil then
+        return false
+    end
+
+    local inst = storage.inst or storage
+    return inst == owner or GetStorageHolder(storage) == owner
+end
+
 function ISR.IsStorageWithinRange(owner, storage, limit)
     if owner == nil or storage == nil then
         return true
     end
 
-    local inst = storage.inst or storage
-    if inst == owner then
+    -- 容器本身在玩家身上：永远在手边
+    if ISR.IsStorageCarriedByPlayer(owner, storage) then
         return true
     end
 
-    -- 容器本身在玩家身上：永远在手边
-    local inventoryitem = inst.components ~= nil and inst.components.inventoryitem or nil
-    local holder = nil
-    if inventoryitem ~= nil then
-        holder = inventoryitem.GetGrandOwner ~= nil
-            and inventoryitem:GetGrandOwner()
-            or inventoryitem.owner
-        if holder == owner then
-            return true
-        end
-    end
-
     -- 装在别的容器里的（limbo）没有世界坐标，跟着宿主容器算距离
-    local anchor = holder or inst
+    local inst = storage.inst or storage
+    local anchor = GetStorageHolder(storage) or inst
     if anchor.Transform == nil then
         return true
     elseif anchor.IsInLimbo ~= nil and anchor:IsInLimbo() then

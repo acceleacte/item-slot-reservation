@@ -121,15 +121,14 @@ AddComponentPostInit("container", function(self)
         end
     end
 
-    -- 只给可携带容器挂组件，世界容器（箱子、锅、切斯特）不挂。
-    -- 注意：有些携带容器（原版 beargerrfur_sack）先 AddComponent("container")
-    -- 后 AddComponent("inventoryitem")，这里判不到 inventoryitem，但它存档里的标记
-    -- 数据带 add_component_if_missing，读档时引擎会自己补组件，不会丢。
-    if IsMasterSimulation()
-        and self.inst ~= nil
-        and self.inst.components ~= nil
-        and self.inst.components.inventoryitem ~= nil
-    then
+    -- 所有 container 实体在构造期就挂组件，不判 inventoryitem。
+    -- 原判定漏两类：跟随型容器（切斯特、哈奇、Woby 只有 container）和「先 container
+    -- 后 inventoryitem」的携带容器（原版 beargerrfur_sack、tacklecontainer）。
+    -- 漏判的后果是存档数据只能靠 add_component_if_missing 让引擎补建组件，而那个标记
+    -- 会让玩家关掉模组后永久进不了档（require 失败打断读档）。现在组件构造期就在，
+    -- 存档数据不带任何重建标记；模组关掉时引擎找不到组件就静默丢弃这份数据。
+    -- 空组件不产生存档数据（没标记时 OnSave 返回 nil），世界容器白挂一个空表。
+    if IsMasterSimulation() and self.inst ~= nil and self.inst.components ~= nil then
         ISR.EnsureSlotMarkStore(self.inst)
     end
 end)
