@@ -126,6 +126,91 @@ function ISR.ClearServerSlotMarkIfItemMismatches(player, container_guid, slot, i
     return ISR.ClearServerSlotMark(player, container_guid, slot, true)
 end
 
+local function FindPlayerByUserid(userid)
+    if userid == nil then
+        return nil
+    end
+
+    local all_players = ISR.GetGlobalValue("AllPlayers", nil)
+    if all_players == nil then
+        return nil
+    end
+
+    for _, player in pairs(all_players) do
+        if player ~= nil and player.userid == userid then
+            return player
+        end
+    end
+
+    return nil
+end
+
+-- 容器的「逻辑主人」：基地箱子、没带眼骨的切斯特没有 inventoryitem 主人链，
+-- 归属只记在 mark store 上。路由（回预留格 / 避开预留格）需要一个 player 去找标记，
+-- 有标记的容器就用记下的 owner 当这个 player。
+function ISR.GetMarkOwnerPlayer(container_inst)
+    if container_inst == nil or container_inst.components == nil then
+        return nil
+    end
+
+    local store = container_inst.components.isr_slotmarkstore
+    if store == nil or store.GetOwner == nil then
+        return nil
+    end
+
+    return FindPlayerByUserid(store:GetOwner())
+end
+
+-- 容器路径的解标记：不要求容器有「在线主人」。
+-- 基地箱子、没带眼骨的切斯特只有 mark store 里的 owner userid，走
+-- ResolvePlayerStorageOwner 会得到 nil，于是整段容器钩子早退、预留永远不解除，
+-- 格子被别的东西占住就成了死格。这里按 store 自己的 owner 判、按它找人同步。
+function ISR.ClearContainerSlotMarkOnMismatch(container_inst, slot, item)
+    if container_inst == nil or slot == nil or item == nil then
+        return false
+    end
+
+    local store = container_inst.components ~= nil and container_inst.components.isr_slotmarkstore or nil
+    if store == nil then
+        return false
+    end
+
+    local mark = store:GetMark(slot)
+    if mark == nil then
+        return false
+    end
+
+    if ISR.MarkMatchesItem(mark, item) then
+        ISR.Log(
+            "Container mark kept by matching item",
+            "container", tostring(container_inst.GUID),
+            "slot", tostring(slot),
+            "prefab", tostring(GetMarkPrefab(mark)),
+            "item", tostring(item.prefab)
+        )
+        return false
+    end
+
+    local owner_userid = store.GetOwner ~= nil and store:GetOwner() or nil
+    if not store:ClearMark(slot) then
+        return false
+    end
+
+    local owner = FindPlayerByUserid(owner_userid)
+    if owner ~= nil then
+        ISR.SyncMarkToClient(owner, container_inst.GUID, slot, nil, true)
+    end
+
+    ISR.Log(
+        "Container mark cleared by foreign item",
+        "container", tostring(container_inst.GUID),
+        "slot", tostring(slot),
+        "prefab", tostring(GetMarkPrefab(mark)),
+        "item", tostring(item.prefab)
+    )
+    return true
+end
+
 local function SortMarks(player, candidates)
     table.sort(candidates, function(a, b)
         if a.order ~= nil and b.order ~= nil and a.order ~= b.order then

@@ -6,6 +6,7 @@ ISR.RPC_SYNC_MARK = "sync_slot_mark"
 ISR.RPC_SYNC_BEGIN = "sync_marks_begin"
 ISR.RPC_SYNC_END = "sync_marks_end"
 ISR.RPC_REQUEST_SYNC = "request_marks_sync"
+ISR.RPC_SYNC_SUPPLY = "sync_craft_supply"
 
 if GLOBAL ~= nil then
     GLOBAL.ISR = ISR
@@ -176,6 +177,15 @@ ISR.ValidContainerRangeOptions =
     far = true,
 }
 
+-- 合成提示音（dontstarve/HUD/recipe_ready）的处理方式：
+--   original 保持原版；borrow 只在借料点亮配方时静音（默认）；silent 全部关掉。
+ISR.ValidCraftPingOptions =
+{
+    original = true,
+    borrow = true,
+    silent = true,
+}
+
 function ISR.NormalizeConfigValue(value, valid_choices, default)
     if valid_choices[value] then
         return value
@@ -245,6 +255,30 @@ function ISR.IsChineseLocale()
         or string.find(code, "chinese", 1, true) ~= nil
 end
 
+-- 「语言」设置项的取值。设置项本身的文案固定中文（modinfo 里的 label 由引擎当字符串渲染，
+-- 没法按语言取表），所以这一项只决定游戏内提示文字（悬停提示、手势文案）用哪种语言。
+ISR.ValidLanguageOptions =
+{
+    zh = true,
+    en = true,
+}
+
+-- 语言：优先用设置项，没配或值非法时跟随游戏语言。
+-- isr_env 先于 isr_config 加载，所以这里必须容忍 ISR.Config 还不存在。
+function ISR.GetLanguageMode()
+    local config = ISR.Config
+    local mode = config ~= nil and config.language or nil
+    if ISR.ValidLanguageOptions[mode] then
+        return mode
+    end
+
+    return ISR.IsChineseLocale() and "zh" or "en"
+end
+
+function ISR.UsesChinese()
+    return ISR.GetLanguageMode() == "zh"
+end
+
 ISR.Text =
 {
     PIN_MARK = { en = "Pin this slot", zh = "固定此格" },
@@ -257,7 +291,7 @@ function ISR.GetText(key)
         return tostring(key)
     end
 
-    return ISR.IsChineseLocale() and entry.zh or entry.en
+    return ISR.UsesChinese() and entry.zh or entry.en
 end
 
 function ISR.GetLocalizedControl(control, fallback)
@@ -359,7 +393,7 @@ function ISR.GetPinChordLabel(kind)
 
     local entry = ISR.PinKeyLabels[key] or key
     parts[#parts + 1] = type(entry) == "table"
-        and (ISR.IsChineseLocale() and entry.zh or entry.en)
+        and (ISR.UsesChinese() and entry.zh or entry.en)
         or tostring(entry)
 
     if not ISR.PinMouseKeys[key] then

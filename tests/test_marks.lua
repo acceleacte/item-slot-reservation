@@ -116,3 +116,38 @@ assert_equal(ISR.ClearServerSlotMarkIfItemMismatches(player, player.GUID, 3, { p
 assert_equal(ISR.GetServerSlotMark(player, player.GUID, 3).prefab, "cutgrass", "mark survives a matching item")
 assert_equal(ISR.ClearServerSlotMarkIfItemMismatches(player, player.GUID, 3, { prefab = "twigs" }), true, "mismatched item clears the mark")
 assert_equal(ISR.GetServerSlotMark(player, player.GUID, 3), nil, "mismatched mark is gone")
+
+-- 容器路径：格子被别的东西占了就解除预留（不要求容器有在线主人） ----------------
+local chest = { GUID = 900, components = {} }
+chest.components.isr_slotmarkstore = MarkStore(chest)
+chest.components.isr_slotmarkstore:SetOwner("KU_player")
+chest.components.isr_slotmarkstore:SetMark(2, "log", 9)
+
+local synced = {}
+ISR.SyncMarkToClient = function(target, guid, slot, prefab, play_sound)
+    synced[#synced + 1] = { player = target, guid = guid, slot = slot, prefab = prefab, sound = play_sound }
+end
+
+assert_equal(ISR.ClearContainerSlotMarkOnMismatch(chest, 2, { prefab = "log" }), false, "a matching item keeps the container mark")
+assert_equal(chest.components.isr_slotmarkstore:GetMark(2) ~= nil, true, "container mark survives a matching item")
+assert_equal(#synced, 0, "keeping the mark syncs nothing")
+
+assert_equal(ISR.ClearContainerSlotMarkOnMismatch(chest, 2, { prefab = "boards" }), true, "a foreign item clears the container mark")
+assert_equal(chest.components.isr_slotmarkstore:GetMark(2), nil, "container mark is gone")
+assert_equal(#synced, 0, "no online owner means no client sync")
+
+-- owner 在线时补一次清标记推送
+local owner_player = { GUID = 2, userid = "KU_player", components = {} }
+runtime_global.AllPlayers = { [owner_player.GUID] = owner_player }
+chest.components.isr_slotmarkstore:SetMark(3, "boards", 10)
+assert_equal(ISR.ClearContainerSlotMarkOnMismatch(chest, 3, { prefab = "log" }), true, "mismatch clears with an online owner")
+assert_equal(#synced, 1, "the owner gets one clear sync")
+assert_equal(synced[1].guid, 900, "sync carries the container guid")
+assert_equal(synced[1].slot, 3, "sync carries the slot")
+assert_equal(synced[1].sound, true, "the clear sync plays the sound")
+assert_equal(ISR.ClearContainerSlotMarkOnMismatch(chest, 99, { prefab = "log" }), false, "an unmarked slot has nothing to clear")
+
+-- 容器的逻辑主人：mark store 上记的 userid → 在线玩家
+assert_equal(ISR.GetMarkOwnerPlayer(chest), owner_player, "the store owner resolves to the online player")
+chest.components.isr_slotmarkstore:SetOwner("KU_offline")
+assert_equal(ISR.GetMarkOwnerPlayer(chest), nil, "an offline owner resolves to nil")

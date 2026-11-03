@@ -43,6 +43,17 @@ dofile(ISR_TEST_ROOT.."/scripts/isr_config.lua")
 
 assert_equal(ISR.Config.border_opacity, 0.6, "border opacity is read from the config")
 
+-- 语言：设置项优先；没配或值非法时回落游戏语言（这里没有 LOC，即英文）
+assert_equal(ISR.Config.language, "zh", "language defaults to Chinese when the option is missing")
+assert_equal(ISR.GetText("PIN_MARK"), "固定此格", "Chinese hint text by default")
+assert_equal(ISR.GetText("CLEAR_MARK"), "清除", "Chinese clear hint by default")
+ISR.Config.language = "en"
+assert_equal(ISR.GetText("PIN_MARK"), "Pin this slot", "English hint text when the option says so")
+ISR.Config.language = "klingon"
+assert_equal(ISR.GetText("PIN_MARK"), "Pin this slot", "an unknown language falls back to the game locale")
+ISR.Config.language = "zh"
+assert_equal(ISR.GetText("PIN_MARK"), "固定此格", "switching back to Chinese works")
+
 assert_equal(ISR.GetSlotMouseIntent(GLOBAL.MOUSEBUTTON_LEFT), nil, "no pin key means no interception")
 pin_pressed = true
 assert_equal(ISR.GetSlotMouseIntent(GLOBAL.MOUSEBUTTON_LEFT), ISR.SLOT_INTENT_PIN, "pin key plus left click pins")

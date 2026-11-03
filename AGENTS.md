@@ -8,8 +8,8 @@
 
 | 项 | 值 |
 |---|---|
-| 模组名 | Item Slot Reservation |
-| 版本 | 0.1.53（`modinfo.lua`） |
+| 模组名（显示名） | 物品格预留（`modinfo.name`，工坊标题仍为 Item Slot Reservation；目录名/存档引用是 `workshop-3830575143`，与显示名无关） |
+| 版本 | 0.1.7（`modinfo.lua`） |
 | 类型 | 服务器模组，`all_clients_require_mod = true`（2026-10-31 由 false 改来，见 §9.5），`client_only_mod = false` |
 | `api_version` | 10 |
 | 全局表 | `ISR`（同时挂到 `GLOBAL.ISR`） |
@@ -24,24 +24,25 @@
 ## 2. 文件结构（4300 行 Lua，31 个测试）
 
 ```
-modmain.lua                 19 行，13 个 modimport，顺序有依赖（env → config → icons → storage → markstores → slotmarks → placement → candidates → debug → persistence → inventoryhooks → clientpredict → uihooks）
-modinfo.lua                156 行，配置项 + 双语文案
+modmain.lua                 20 行，14 个 modimport，顺序有依赖（env → config → icons → storage → markstores → slotmarks → placement → candidates → crafting → debug → persistence → inventoryhooks → clientpredict → uihooks）
+modinfo.lua                ~170 行，配置项 + 双语文案
 scripts/
   isr_env.lua              396  GLOBAL 取值兜底、按键码归一化、点击意图、prefab 键工具、距离档位、i18n
-  isr_config.lua            40  读 GetModConfigData（pin_key / pin_modifier / icon_opacity / border_opacity / debug_log / pickup_to_container / container_range）
+  isr_config.lua            43  读 GetModConfigData（pin_key / pin_modifier / icon_opacity / border_opacity / debug_log / pickup_to_container / container_range / craft_from_container）
   isr_icons.lua            237  空格物品图标 + 木框渲染（透明度取自 `border_opacity`）
   isr_storage.lua          485  存储适配器注册表 + 内置适配器 + 容器归属判定 + 作用距离
   isr_markstores.lua       152  组件挂载、按 GUID 找 store、标记容器注册表、随身实例递归枚举
   isr_slotmarks.lua        505  服务端标记 CRUD、匹配判定、客户端缓存、拾取音效、5 个 RPC handler
   isr_placement.lua        230  放置路由决策、标记优先级（容器 / 物品栏）、距离过滤、transfer 上下文栈
   isr_candidates.lua       521  候选格搜索（堆叠/溢出/专用容器优先）
+  isr_crafting.lua         ~430  合成借料：builder 三 hook + 供应量下发 + builder_replica 客户端判定
   isr_debug.lua            106  自检 + 控制台标记入口
   isr_persistence.lua      400  客户端能力白名单、全量同步、旧开发版存档迁移、玩家级标记备份（含嵌套路径）
   isr_inventoryhooks.lua   348  GiveItem / GetNextAvailableSlot / Shift 转移 hook
   isr_clientpredict.lua    330  客户端落点预测（标记先行判落点 → 背包预测 / 守卫窗口）
   isr_uihooks.lua          368  invslot / inventorybar / containerwidget 的 UI hook
   components/isr_slotmarkstore.lua  159  标记存储组件（OnSave/OnLoad、add_component_if_missing、owner、注册表登记）
-tests/                      31 个 lua 测试 + run_lua_tests.py
+tests/                      33 个 lua 测试 + run_lua_tests.py
 images/                     modicon + wood_frame_128_ARGB（木框贴图）
 ```
 
@@ -263,6 +264,46 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 `GetContextMarks` 的缓存只活在单个 `context` 里（每次 GiveItem 由 `MakePlacementContext` 新建），不存在跨帧陈旧。
 
+### 3.11 合成借料（0.1.7，isr_crafting.lua）
+
+合成时自动借用「已固定且在作用距离内」的世界容器里的材料。原版只扫物品栏 + **当前打开**的容器（`inventory.opencontainers`），关着的容器不参与。
+
+| hook（builder 组件） | 作用 |
+|---|---|
+| `HasIngredients` | 原版判负后，用容器供应再判一次（决定合成按钮/入口） |
+| `GetIngredients` | 原版 materials 之外，把缺口记到容器内实体上（materials 是**两层**结构 `{[类型] = {[实体] = 数量}}`） |
+| `RemoveIngredients` | 容器条目自消费：部分扣减 `stackable:Get`（对实体操作，不看容器开闭）；整堆/单件 `Container:RemoveItem` 清槽位再 Remove。物品栏条目留给原版 |
+
+**不重复扣料的排除规则**（供应集合必须与原版统计不相交）：玩家物品栏标记、随身容器（背包/背包里的桶，原版 overflow 已覆盖）、玩家**正打开**的容器（原版 opencontainers 已覆盖）一律不进供应；另排除 `excludefromcrafting` / `readonlycontainer` 与 `nocrafting` 物品。少排会重复扣料（合成少付钱），这是本文件最要紧的约束。
+
+- 只认标记：格子必须固定给该 prefab 且格中有该物品，空标记格不算。
+- 作用距离复用 `container_range`（`ISR.IsStorageWithinRange`）；开关 `craft_from_container` 默认开（老存档缺该项按 nil → 开）。
+- 消费空掉的类型表要摘掉；mod 沙箱里 `next` 为 nil，空表判定用 `pairs` 走一遍。
+- 测试 `tests/test_crafting.lua`（夹具：切斯特 log 堆 + 近处箱子 twigs 堆；注意消费用例会扣光夹具，包装用例前要恢复）。
+
+**客户端判定（同属 0.1.7）**：配方格子是不是灰的由**客户端** `builder_replica:HasIngredients` 决定，它走 `inventory_classified:Has` → 只数物品栏 + `GetOpenContainers()`（HUD 里可见的容器）。关着的切斯特/箱子内容**根本不同步到客户端**，服务端 hook 改不了 UI。
+
+- 服务端 `PushCraftingSupply` 每 0.5s 按玩家算一次「可借的固定格数量」汇总（`ComputeCraftSupply` 复用 `GetCraftingSupply`，口径天然一致），序列化成 `log:6;twigs:2`（`table.sort` 保序），与上次 payload 不同才发 `sync_craft_supply` RPC；`IsClientCapable` 拦掉没装模组的客户端。
+- 客户端 `builder_replica` 在原版判负后用这份数字补缺口（`HasIngredientsWithClientSupply`），角色/技术材料仍按原版判；收到新 payload 即 `ThePlayer:PushEvent("refreshcrafting")`，菜单开着也实时变色。
+- **replica 组件不走 `EntityScript:AddComponent`**（`entityreplica.lua` 里直接 `cmp(self)`），`AddComponentPostInit("builder_replica")` 永远不触发，必须用 `AddClassPostConstruct("components/builder_replica")` 包构造器。
+- 实体上有真 `builder` 组件（房主/本地服务器）时客户端侧直接放行给服务端 hook，避免双重判定。
+- 客户端缓存的只是「数量」，不含归属/距离：范围、开关容器、`excludefromcrafting` 全在服务端算，客户端不重复实现这套规则。
+- 设置界面排版（0.1.7 起）：`modinfo` 用 `Section(name, label)` 造分组标题 —— 一个只有单选项且 `description` 为空的条目，`modconfigurationscreen` 里 `is_header` 会隐藏下拉框和底图、只放大标题。悬停说明区只有 585×50（字号 22，约两行），**每段必须 ≤2 行且用 `\n` 手动断行**，单行不超过约 26 个汉字；否则后半句直接看不到。每个选项的 `hover` 会显示在下方的金色值说明行（`value_description`，一行），适合放「这个值的含义」。
+- 语言：`modinfo.lua` 的 `label` / `hover` 由引擎（`GetModConfigurationOptions_Internal`）取回后直接 `SetString`，**不支持按语言取表**，所以设置项文案只能是单一语言（当前固定中文）。`language` 只影响运行时字符串：`ISR.GetLanguageMode()` 优先取配置，缺项/非法值回落 `ISR.IsChineseLocale()`；`ISR.GetText` 与 `ISR.GetPinChordLabel` 都走它。`isr_env` 早于 `isr_config` 加载，取值时必须容忍 `ISR.Config == nil`。
+- 提示音：`craftingmenu_widget` 用「分类内可合成数量比上次多」置 `new_recipe_available`，pinbar 的 `SetCraftingState` 据此播 `dontstarve/HUD/recipe_ready`。借料让这个计数频繁变多，所以在 `isr_uihooks.lua` 里包了 pinbar 的 `SetCraftingState`，只在 `ISR.ShouldMuteRecipeReady()`（借料刚点亮的 0.35s 内）把 `new_recipe_available` 置 false。别去压刷新频率：刷新挂的是原版物品事件，压了会让格子状态过期。
+- 性能：`HasIngredientsWithClientSupply` 先用 `RecipeUsesSupply` 过一遍配方的 `ingredients`，没有一种在同步表里就直接返回 false，**不进 `inventory:Has`**（每次 Has 都要扫物品栏 + overflow + 打开的容器）。菜单一次重算几百个配方，真正走完整判定的只剩含固定格材料的那几个，通常是个位数。
+  不做「按配方缓存结果」：剩下这点开销已经小于原版自己那次 `HasIngredients`，而缓存的失效点要覆盖物品栏事件（`itemget`/`itemlose`/`stacksizechange`/`newactiveitem`/`refreshcrafting`）与供应量变化，漏一个就是格子状态不刷新，不划算。
+
+### 3.12 物品直接进容器（0.1.7，`Container:GiveItem` 包装）
+
+物品进容器有三条真实路径：手动拖入/换位（`PutAllOfActiveItemInSlot` → `GiveItem(item, slot)`）、Shift 转移（`MoveItemFromAllOfSlot` → `GiveItem(item, nil)`）、自动放入（`GiveItem(item, nil)`）。原版在 `slot == nil` 时自己挑格（`GetSpecificSlotForItem`），**落点只有事后 `GetItemSlot(item)` 才知道**。
+
+- 「避开预留格」：`slot == nil` 且容器树里有空的预留格时，走 `GetNextUnmarkedContainerAvailableSlot`（先找同类未满堆、再找未预留空格），落点交给它；没有非预留位就**回落原版**，不要 `return false`（那会让物品直接退回来源）。
+- 「占进预留格就解除预留」：落点确定后调 `ClearContainerSlotMarkOnMismatch`（`isr_slotmarks.lua`）。它按 **mark store 的 owner** 判，不要求容器有在线主人 —— 基地箱子、没带眼骨的切斯特 `ResolvePlayerStorageOwner` 给 nil，早期版本在这里整段 early return，于是这两类容器的预留永远不解除，格子被别的东西占住就成了死格。
+- 容器钩子里的 owner 解析顺序：`ResolvePlayerStorageOwner`（随身容器、跟随者）→ `GetMarkOwnerPlayer`（mark store 里记的 userid → 在线玩家）→ 都没有则只做解标记、不做路由。
+- 读档期间（`storage.isloading` 或 `storage._isr_loading`）一律不解标记，见 `IsStorageLoading`。
+
+
 ---
 
 ## 4. 数据流
@@ -314,7 +355,7 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 | 控制台预留 | `ISR.DebugSetPrefabMark(3, "cutgrass")`，背包 `(2, "twigs", true)` |
 | 控制台清除 | `ISR.DebugClearSlotMark(3)` |
 
-配置项（`isr_config.lua` 读）：`pin_modifier`（SHIFT / CTRL / ALT / NONE，默认 SHIFT）、`pin_key`（MIDDLE / RIGHT / V B N G F C X Z R T H J K L / NONE，默认 MIDDLE）、`icon_opacity`（0~1，默认 0.35）、`border_opacity`（0~1，默认 1）、`debug_log`、`pickup_to_container`（默认 false；只管世界容器，随身容器永远接收）、`container_range`（near / medium / far，默认 medium）。
+配置项（`isr_config.lua` 读）：`language`（zh / en，默认 zh；只管游戏内提示文字，设置项文案固定中文）、`pin_modifier`（SHIFT / CTRL / ALT / NONE，默认 SHIFT）、`pin_key`（MIDDLE / RIGHT / V B N G F C X Z R T H J K L / NONE，默认 MIDDLE）、`icon_opacity`（0~1，默认 0.35）、`border_opacity`（0~1，默认 1）、`debug_log`、`pickup_to_container`（默认 false；只管世界容器，随身容器永远接收）、`container_range`（near / medium / far，默认 medium）、`craft_from_container`（**默认 false，测试版**；合成借料开关，作用距离用 `container_range`）、`craft_ping`（original / borrow / silent，默认 borrow；合成提示音处置）。
 
 两个透明度都画在同一个格子上，改其中一个不影响另一个：
 
@@ -336,6 +377,8 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 - **发布源是工作区根的 `Item-slot-reservation\` 文件夹**，不在本仓库内。更新版本时改那里的 `modinfo.lua` 与脚本，再由维护者在游戏内 Upload。
 - **不要把发布目录复制进 `mods\item-slot-reservation\`**。工坊订阅版已加载，多一份本地副本会让模组列表出现两个同名条目。上传后 Steam 自动拉取到 `workshop\content\322330\3830575143\`，无需手动同步缓存。
 - 工坊不接受同版本覆盖：每次 Upload 前必须升 `modinfo.lua` 的 `version`。
+- **版本号规则（硬性，用户 2026-11-03 指定）**：未上传工坊期间，所有改动都合并到**同一个待发布号**上，一次只递增一位（工坊上是 `0.1.6` → 待发布 `0.1.7`；中途再改多少次仍是 `0.1.7`），**不跳号**、不因为「修了个 bug」单独占一个新号。判断依据是工坊上实际存在的号，不是本地改了几轮。发布完成后再动代码才允许 +1。
+- 同一个号内的改动全部写进 `CHANGELOG.md` 里**同一节**，不拆成两条（这条规则的由来：0.1.7 未发布时又改了一轮，误开成 0.1.8，已并回 0.1.7）。
 - 启用方式：各存档 `modoverrides.lua` 勾选工坊 id；不再用 `ForceEnableMod`（会与工坊版本重复加载）
 - **本地测试副本**（按需临时建）：`mods\item-slot-reservation-test\`，从发布目录拷入，脚本与仓库逐字节一致，只有 `modinfo.lua` 不同 —— `name` 带 `[TEST]` 前缀、`version` 带 `-test` 后缀、描述首行写「本地测试版」，好和工坊版区分。只为 `Cluster_4`（存档名「测试」）启用，该存档把 `workshop-3830575143` **整条移除**（不是 `enabled=false`，否则两份 hook 叠加）。测完把目录**移入** `backup\item-slot-reservation-test-<版本>-<日期>\`（不要留在 `mods\` 里），再用 `backup\modoverrides.Cluster_4_{Master,Caves}.bak-testmod-<日期>` 覆盖回原位置。2026-11-01 反复用过（0.1.4 全程），当前仍留在 `mods\` 等工坊上传后清理。
 - 改完代码必须**同时重启客户端和两个 dedicated server 进程**：服务端是独立进程，只重启客户端加载不到服务端改动

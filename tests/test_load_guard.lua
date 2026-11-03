@@ -30,6 +30,7 @@ ISR =
     end,
     ShouldReserveMarkedSlotsForItem = function() return false end,
     ClearServerSlotMarkIfItemMismatches = function() cleared = cleared + 1 end,
+    ClearContainerSlotMarkOnMismatch = function() cleared = cleared + 1 end,
     Log = function() end,
 }
 

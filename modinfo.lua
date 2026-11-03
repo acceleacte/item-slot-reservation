@@ -1,53 +1,24 @@
-name = "Item Slot Reservation"
+name = "Item Slot Reservation[beta]"
 description = [[
-版本 0.1.6
-
-物品格预留（Item Slot Reservation）把储物格固定给指定物品。
-基本能放进物品栏的都能固定：草、树枝、木头、石头等材料，武器、工具、帽子等装备。
+按Shift + 鼠标中键 把储物格固定给指定物品
+基本能放进物品栏的都能固定：如材料、武器、工具、帽子、护符等
 
 固定之后：
-- 该物品被拾取、制作完成、或从装备栏卸下时，自动回到固定的格子。
-- 容器里还留着固定格时，拾取到的物品会直接进那个容器并播放拾取音效。玩家身上的背包（袋子、背包里的桶）永远如此，不受设置影响；「拾取后放回容器」开关（默认关闭）只控制世界里的容器（切斯特、基地箱子）。
-- 世界里的容器（基地箱子、跟随中的切斯特）只有在你身边时才接收，距离阈值在设置里选「近 / 中 / 远」；随身携带的容器不受限制。
-- 其它物品不会占用这一格；格子被手动塞进别的东西时，预留会自动解除。
-- 只能放物品栏的物品（以太余烬、沃拓克斯灵魂）不受预留限制，照常进物品栏。
-- 快速转移（Shift + 左键）只落进未预留的格、或该物品自己的预留格；物品栏没有可落点时直接进背包，不会先闪进别人的预留格。
+- 该物品被拾取、制作完成、或从装备栏卸下时，自动回到固定的格子
+- 其它物品不会占用这一格；格子被手动塞进别的东西时，预留会自动解除
+- 只能放物品栏的物品（以太余烬、沃拓克斯灵魂）在物品栏满时不受预留限制
+- 快速转移只落进未预留的格、或该物品自己的预留格；物品栏没有可落点时直接进背包
 
-支持玩家物品栏、背包、随身容器和已装备容器；背包里的容器（比如桶）内部同样可以固定；切斯特、哈奇这类跟着你走的容器也算，没带眼骨时打开它一样能固定。
-按住 Shift + 鼠标中键点击已有物品的格子即可固定；同一格再点一次取消。手势可在设置里改：修饰键（Shift / Ctrl / Alt / 无）+ 动作键（中键 / 右键 / 键盘键）。
-预留跟随容器保存：读档、下地穴（跨 shard）后自动恢复。
+测试内容(默认关闭）：
+- 支持世界容器（如：基地箱子、跟随中的切斯特）和随身容器
+- 世界里的容器只有在身边时才接收物品
+- 合成借料：开启后合成会自动借用箱子里固定格里的材料参与合成，作用距离同上
 
-更新日志：
-- 0.1.6：修复装了本模组后，装备栏模组（四五六格装备栏、Extra Equip Slots）新增的护符栏 / 背包栏整栏消失；顺带带上 0.1.52 的性能与稳定性改动。
-- 0.1.51：固定手势拆成「修饰键 + 动作键」两个设置项。
-- 0.1.5：存档数据不再依赖模组提供的组件，可安全卸载；0.1.41 及更早的档需先装 0.1.5 进一次游戏并保存。
-
---------------------------------
-
-Version 0.1.6
-
-Item Slot Reservation fixes storage slots to specific items.
-Anything that fits in the inventory can be fixed: grass, twigs, logs, stone and other materials; weapons, tools, hats and other equipment.
-
-Once fixed:
-- The item returns to its fixed slot when picked up, crafted, or unequipped.
-- When a fixed slot for it still exists inside a container, the picked-up item goes straight into that container and plays the pickup sound. A container carried on your body (backpack, sack, a tackle box inside it) always does this regardless of the option; the "Pickup into containers" option (off by default) only governs containers standing in the world, such as Chester or a base chest.
-- Containers in the world (a base chest, a following Chester) only receive items while you are close enough; pick Near / Medium / Far in the mod options. Containers you carry are not limited.
-- Other items do not occupy the slot; forcing another item in clears the reservation.
-- Pocket-only items (Ethereal Embers, Wortox Souls) ignore reservations and always go to the inventory.
-- Quick transfer (Shift + left-click) only targets unreserved slots or the item's own reserved slot; when the inventory has no room for it the item goes straight to the backpack instead of briefly flickering into someone else's slot.
-
-Supports the player inventory, backpacks, carried containers and equipped containers; containers carried inside them (a tackle box in a backpack, for example) can be fixed too, and so can follower containers like Chester or Hutch.
-Hold Shift and middle-click a slot that holds an item to fix it; middle-click again to clear. Both the modifier and the action key are configurable.
-Reservations are saved with the container and survive save/load and shard travel.
-
-Changelog:
-- 0.1.6: Fixed the amulet / backpack slot added by equip-slot mods (Extra Equip Slots, 四五六格装备栏) disappearing while this mod is enabled. Includes the 0.1.52 performance and stability work.
-- 0.1.51: The pin gesture is now two options: modifier plus action key.
-- 0.1.5: Saved data no longer depends on a component this mod provides, so the mod can be removed safely. Saves from 0.1.41 or earlier must load once with 0.1.5 and save before you disable it.
+历史更新日志请前往创意工坊页面查看；如果遇到问题请及时留言反馈
+并且可以在模组设置中关闭测试版内容以(尝试)解决问题
 ]]
 author = "acceleacte"
-version = "0.1.6"
+version = "0.1.7"
 api_version = 10
 dst_compatible = true
 dont_starve_compatible = false
@@ -59,29 +30,55 @@ client_only_mod = false
 icon_atlas = "images/modicon.xml"
 icon = "modicon.tex"
 
+-- 悬停说明的显示区只有两行（modconfigurationscreen：585×50，字号 22），
+-- 每段控制在两行内、并用 \n 手动断行，否则后半句会被截掉
+-- 分组标题的做法与原版一致：一个只有单选项、且选项文案为空的条目，
+-- screen 里 is_header 会把下拉框和底图隐藏、只放大标题文字
+local function Section(name, label)
+    return
+    {
+        name = name,
+        label = label,
+        hover = "",
+        options = { { description = "", data = "header" } },
+        default = "header",
+    }
+end
+
 configuration_options =
 {
+    Section("section_general", "常规设置"),
     {
-        name = "pin_modifier",
-        label = "Pin modifier / 修饰键",
-        hover = "Only used when the pin key below is a mouse button. NONE means no modifier.\n仅在下面的固定键是鼠标键时生效。NONE 表示不用修饰键。键盘键不需要修饰键。",
+        name = "language",
+        label = "语言/Language",
         options =
         {
-            { description = "Shift", data = "SHIFT" },
-            { description = "Ctrl", data = "CTRL" },
-            { description = "Alt", data = "ALT" },
-            { description = "None / 无", data = "NONE" },
+            { description = "中文", data = "zh" },
+            { description = "English", data = "en" },
+        },
+        default = "zh",
+    },
+    {
+        name = "pin_modifier",
+        label = "修饰键",
+        hover = "仅当固定键是鼠标键时生效；\n选「无」表示不用修饰键",
+        options =
+        {
+            { description = "Shift", data = "SHIFT", hover = "Shift + 固定键切换标记" },
+            { description = "Ctrl", data = "CTRL", hover = "Ctrl + 固定键切换标记" },
+            { description = "Alt", data = "ALT", hover = "Alt + 固定键切换标记" },
+            { description = "无", data = "NONE", hover = "固定键单独按下即切换" },
         },
         default = "SHIFT",
     },
     {
         name = "pin_key",
-        label = "Pin key / 固定键",
-        hover = "Keyboard key: hold it and click a slot that already holds an item. Left click pins, right click clears.\nMiddle / Right click: press it together with the modifier on a slot to toggle the mark.\n键盘键：按住它点击已有物品的格子，左键固定、右键清除（不需要修饰键）。中键 / 右键：与修饰键一起按下才会切换标记。",
+        label = "固定键",
+        hover = "键盘键：按住后左键固定、右键清除\n中键 / 右键：需与修饰键一起按",
         options =
         {
-            { description = "Middle click / 中键", data = "MIDDLE" },
-            { description = "Right click / 右键", data = "RIGHT" },
+            { description = "中键", data = "MIDDLE", hover = "与修饰键使用" },
+            { description = "右键", data = "RIGHT", hover = "与修饰键使用" },
             { description = "V", data = "V" },
             { description = "B", data = "B" },
             { description = "N", data = "N" },
@@ -96,14 +93,15 @@ configuration_options =
             { description = "J", data = "J" },
             { description = "K", data = "K" },
             { description = "L", data = "L" },
-            { description = "None / 无", data = "NONE" },
+            { description = "无", data = "NONE", hover = "关闭固定手势" },
         },
         default = "MIDDLE",
     },
+    Section("section_look", "外观配置"),
     {
         name = "icon_opacity",
-        label = "Icon opacity / 图标透明度",
-        hover = "Opacity of the item icon shown on empty reserved slots.\n空预留格中物品图标的透明度。",
+        label = "图标透明度",
+        hover = "空预留格中物品图标的透明度",
         options =
         {
             { description = "15%", data = 0.15 },
@@ -117,8 +115,8 @@ configuration_options =
     },
     {
         name = "border_opacity",
-        label = "Border opacity / 边框透明度",
-        hover = "Opacity of the wooden frame drawn around a reserved slot.\n预留格木框的透明度。",
+        label = "边框透明度",
+        hover = "预留格木框的透明度",
         options =
         {
             { description = "20%", data = 0.20 },
@@ -129,38 +127,63 @@ configuration_options =
         },
         default = 1.00,
     },
-    {
-        name = "debug_log",
-        label = "Debug log / 调试日志",
-        hover = "Print slot-mark diagnostics to client_log/server_log.\n向 client_log/server_log 输出标记诊断信息。",
-        options =
-        {
-            { description = "Disabled / 关闭", data = false },
-            { description = "Enabled / 开启", data = true },
-        },
-        default = false,
-    },
+    Section("section_container", "测试内容"),
     {
         name = "pickup_to_container",
-        label = "Pickup into containers / 拾取后放回容器",
-        hover = "On: an item picked up goes straight into its fixed slot inside Chester, a tackle box and so on. Off (default): only slots on the player receive the item — the inventory plus any container carried on the body (backpack, sack, a tackle box inside it); containers standing in the world, such as Chester, just stay reserved.\n开启：拾取到的物品直接回到切斯特、桶等世界容器里固定的那一格。关闭（默认）：只有玩家身上的固定格会接收物品（物品栏 + 随身容器：背包、袋子、背包里的桶）；世界里的容器（切斯特、基地箱子）内的固定格仅保留占位。",
+        label = "拾取后放回容器",
+        hover = "开启：拾取物直接进箱子等世界容器的固定格\n关闭：只有物品栏和随身容器的固定格接收",
         options =
         {
-            { description = "On / 开启", data = true },
-            { description = "Off / 关闭", data = false },
+            { description = "开启", data = true, hover = "世界容器的固定格也接收拾取物" },
+            { description = "关闭", data = false, hover = "只有物品栏和随身容器的固定格接收" },
         },
         default = false,
     },
     {
         name = "container_range",
-        label = "Container range / 容器作用距离",
-        hover = "How far a fixed slot inside a container still receives picked-up items. Near = 2.5 tiles, Medium = 6 tiles, Far = 12 tiles. Containers you carry (backpack, tackle box in it) are not limited.\n固定格离玩家多远还能自动接收捡到的东西。近 = 约 2.5 格地皮，中 = 6 格，远 = 12 格。随身携带的容器（背包及里面的桶）不受限制。",
+        label = "容器作用距离",
+        hover = "世界容器离你多远能接收物品\n近 2.5 格 / 默认 6 格 / 远 12 格",
         options =
         {
-            { description = "Near / 近", data = "near" },
-            { description = "Medium / 中", data = "medium" },
-            { description = "Far / 远", data = "far" },
+            { description = "近", data = "near", hover = "约为切斯特的跟随范围" },
+            { description = "默认", data = "medium", hover = "基本覆盖大部分基地范围" },
+            { description = "远", data = "far", hover = "大型基地范围" },
         },
         default = "medium",
+    },
+    {
+        name = "craft_from_container",
+        label = "合成借料",
+        hover = "固定后无需打开箱子可使用内部材料参与合成\n可能与部分模组冲突，异常时优先关闭排查",
+        options =
+        {
+            { description = "关闭", data = false, hover = "只用物品栏和已打开的容器合成" },
+            { description = "开启", data = true, hover = "借用容器里已固定的材料合成" },
+        },
+        default = false,
+    },
+    {
+        name = "craft_ping",
+        label = "合成提示音",
+        hover = "借料点亮配方时原版会响一声",
+        options =
+        {
+            { description = "借料时静音(推荐)", data = "borrow", hover = "在借料点亮配方时静音" },
+            { description = "原版", data = "original", hover = "会很吵" },
+            { description = "全部静音", data = "silent", hover = "彻底关掉" },
+        },
+        default = "borrow",
+    },
+    Section("section_advanced", "高级"),
+    {
+        name = "debug_log",
+        label = "调试日志",
+        hover = "向日志输出标记诊断信息，排查问题时打开",
+        options =
+        {
+            { description = "关闭", data = false },
+            { description = "开启", data = true },
+        },
+        default = false,
     },
 }

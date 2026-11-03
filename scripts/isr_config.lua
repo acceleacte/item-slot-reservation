@@ -2,6 +2,8 @@ ISR = ISR or {}
 
 ISR.Config =
 {
+    -- 语言：zh / en。只管游戏内提示文字，设置项文案固定中文（modinfo 由引擎渲染，改不了）。
+    language = ISR.NormalizeConfigValue(GetModConfigData("language"), ISR.ValidLanguageOptions, "zh"),
     icon_opacity = ISR.ToNumber(GetModConfigData("icon_opacity")) or 0.35,
     -- 木框透明度：0 完全透明（等于不画框），1 不透明。默认 1，保持加这个选项之前的观感。
     border_opacity = ISR.ToNumber(GetModConfigData("border_opacity")) or 1,
@@ -14,6 +16,11 @@ ISR.Config =
     pickup_to_container = GetModConfigData("pickup_to_container") == true,
     -- 容器作用距离：近 / 中 / 远。只限制世界里的容器，随身携带的容器不受影响。
     container_range = ISR.NormalizeConfigValue(GetModConfigData("container_range"), ISR.ValidContainerRangeOptions, "medium"),
+    -- 合成借料（测试版）：合成时自动使用已固定且在作用距离内的世界容器里的材料。
+    -- 默认关闭：这一项会改动合成判定，且可能和别的合成类模组打架，要玩家自己开。
+    craft_from_container = GetModConfigData("craft_from_container") == true,
+    -- 合成提示音的处置：original（原版）/ borrow（只在借料点亮配方时静音）/ silent（全部静音）
+    craft_ping = ISR.NormalizeConfigValue(GetModConfigData("craft_ping"), ISR.ValidCraftPingOptions, "borrow"),
 }
 
 if ISR.Config.icon_opacity < 0 then
@@ -30,11 +37,14 @@ end
 
 ISR.Log(
     "Config",
+    "language", tostring(ISR.Config.language),
     "pin_key", tostring(ISR.Config.pin_key),
     "pin_modifier", tostring(ISR.Config.pin_modifier),
     "icon_opacity", tostring(ISR.Config.icon_opacity),
     "border_opacity", tostring(ISR.Config.border_opacity),
     "debug_log", tostring(ISR.Config.debug_log),
     "pickup_to_container", tostring(ISR.Config.pickup_to_container),
-    "container_range", tostring(ISR.Config.container_range)
+    "container_range", tostring(ISR.Config.container_range),
+    "craft_from_container", tostring(ISR.Config.craft_from_container),
+    "craft_ping", tostring(ISR.Config.craft_ping)
 )

@@ -401,3 +401,27 @@ AddClassPostConstruct("widgets/containerwidget", function(self)
         end
     end
 end)
+
+-- ---------------------------------------------------------------------------
+-- 静音「新配方可合成」提示音（isr_crafting.lua 的借料顺带引起的那一声）
+--
+-- 声音来源：craftingmenu_widget 里「某个分类的可合成数量比上次多」就置
+-- new_recipe_available，pinbar 的 SetCraftingState 据此播 dontstarve/HUD/recipe_ready。
+-- 借料让「拿进一件物品就凑够一个配方」，于是这个计数频繁变多，响得莫名其妙。
+-- 只在「刚刚有一次配方是被借料点亮的」这一瞬间掐掉，纯靠物品栏凑齐的照常响。
+-- ---------------------------------------------------------------------------
+AddClassPostConstruct("widgets/redux/craftingmenu_pinbar", function(self)
+    local button = self.open_menu_button
+    if button == nil or button.SetCraftingState == nil then
+        return
+    end
+
+    local base_SetCraftingState = button.SetCraftingState
+    button.SetCraftingState = function(s, can_prototype, new_recipe_available)
+        if new_recipe_available and ISR.ShouldMuteRecipeReady ~= nil and ISR.ShouldMuteRecipeReady() then
+            new_recipe_available = false
+        end
+
+        return base_SetCraftingState(s, can_prototype, new_recipe_available)
+    end
+end)

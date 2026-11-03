@@ -210,12 +210,39 @@ AddPlayerInventoryPostInit(function(self)
     end
 end)
 
+-- 原版 GiveItem 会自己挑格（slot 为 nil 时走 GetSpecificSlotForItem），落点只有事后
+-- 回头看 GetItemSlot 才知道。手动拖入、Swap、Shift 转移、自动放入都可能不给 slot，
+-- 只按 slot 判就会漏掉「预留格被别的东西占住」的情况，预留留在那儿成了死格。
+local function ClearContainerMarkOnLandedSlot(container_comp, item, slot, result)
+    if not result or item == nil or container_comp == nil or IsStorageLoading(container_comp) then
+        return
+    end
+
+    local landed = slot
+    if landed == nil and container_comp.GetItemSlot ~= nil then
+        landed = container_comp:GetItemSlot(item)
+    end
+
+    if landed ~= nil and ISR.ClearContainerSlotMarkOnMismatch ~= nil then
+        ISR.ClearContainerSlotMarkOnMismatch(container_comp.inst, landed, item)
+    end
+end
+
 AddComponentPostInit("container", function(self)
     local old_GiveItem = self.GiveItem
     function self:GiveItem(item, slot, src_pos, drop_on_fail)
         local owner = ISR.ResolvePlayerStorageOwner(self, "container")
+        if owner == nil and ISR.GetMarkOwnerPlayer ~= nil then
+            -- 基地箱子 / 没带眼骨的切斯特：没有 inventoryitem 主人链，
+            -- 归属记在 mark store 上。用记下的 owner 参与路由，
+            -- 否则「回预留格」「避开预留格」这两条对它们完全不生效。
+            owner = ISR.GetMarkOwnerPlayer(self.inst)
+        end
+
         if owner == nil then
-            return old_GiveItem(self, item, slot, src_pos, drop_on_fail)
+            local result = old_GiveItem(self, item, slot, src_pos, drop_on_fail)
+            ClearContainerMarkOnLandedSlot(self, item, slot, result)
+            return result
         end
 
         local container_guid = self.inst ~= nil and self.inst.GUID or nil
@@ -234,29 +261,27 @@ AddComponentPostInit("container", function(self)
 
         if slot == nil
             and ISR.ShouldReserveMarkedSlotsForItem(owner, item)
-            and owner ~= nil
             and ISR.ContainerTreeHasMarkedEmptySlot(self, item, owner)
         then
             local next_slot, next_container = ISR.GetNextUnmarkedContainerAvailableSlot(self, item, owner)
             if next_slot == nil then
+                -- 没有非预留的空位：交回原版（原版会用上预留格）。
+                -- 硬 return false 会让物品直接退回来源，比「先避开、实在没位再用」更差。
                 ISR.Log(
                     "Reserved container full",
                     tostring(item ~= nil and item.prefab or nil),
                     "container", tostring(container_guid),
                     "drop_on_fail", tostring(drop_on_fail)
                 )
-                return false
-            end
-            if next_container ~= nil and next_container ~= self then
+            elseif next_container ~= nil and next_container ~= self then
                 return next_container:GiveItem(item, next_slot, src_pos, false)
+            else
+                slot = next_slot
             end
-            slot = next_slot
         end
 
         local result = old_GiveItem(self, item, slot, src_pos, drop_on_fail)
-        if slot ~= nil and result and not IsStorageLoading(self) then
-            ISR.ClearServerSlotMarkIfItemMismatches(owner, container_guid, slot, item)
-        end
+        ClearContainerMarkOnLandedSlot(self, item, slot, result)
         return result
     end
 end)

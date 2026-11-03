@@ -70,6 +70,9 @@ GLOBAL.KEY_L = 108
 GLOBAL.KEY_SHIFT = 402
 GLOBAL.KEY_CTRL = 401
 GLOBAL.KEY_ALT = 400
+-- isr_crafting 用到的常驻全局（scripts/recipes.lua / util.lua）
+GLOBAL.GetValidRecipe = function() return nil end
+GLOBAL.RoundBiasedUp = function(value) return value end
 
 EQUIPSLOTS = GLOBAL.EQUIPSLOTS
 TheWorld = GLOBAL.TheWorld
