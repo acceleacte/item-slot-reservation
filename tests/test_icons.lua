@@ -10,8 +10,10 @@ local function NewImage(atlas, image)
         atlas = atlas,
         image = image,
         shown = true,
+        size_calls = 0,
         SetClickable = function() end,
         SetSize = function(self, width, height)
+            self.size_calls = self.size_calls + 1
             self.width = width
             self.height = height
         end,
@@ -34,7 +36,7 @@ end
 
 ISR =
 {
-    Config = { icon_opacity = 0.35 },
+    Config = { icon_opacity = 0.35, border_opacity = 1 },
     NormalizePrefabKey = function(value)
         if value == nil then
             return nil
@@ -105,5 +107,31 @@ ISR.ApplySlotBorder(slot)
 assert_equal(slot._isr_slot_border ~= nil, true, "border widget is created")
 assert_equal(slot._isr_slot_border.atlas, "images/wood_frame_128_ARGB.xml", "border uses the mod atlas")
 assert_equal(slot._isr_slot_border.shown, true, "border is visible")
+assert_equal(slot._isr_slot_border.tint[4], 1, "border is fully opaque by default")
+
+-- 木框透明度跟随配置项 border_opacity
+ISR.Config.border_opacity = 0.4
+ISR.ApplySlotBorder(slot)
+assert_equal(slot._isr_slot_border.tint[4], 0.4, "border uses the configured opacity")
+
+ISR.Config.border_opacity = nil
+ISR.ApplySlotBorder(slot)
+assert_equal(slot._isr_slot_border.tint[4], 1, "missing config falls back to opaque")
+
 ISR.ClearSlotBorder(slot)
 assert_equal(slot._isr_slot_border.shown, false, "border is hidden on clear")
+
+-- 尺寸没变就不重复 SetSize：OnUpdate 每帧都会走 RefreshSlotBorderLayout，
+-- 每次都设一遍等于每帧触发一次 UI 布局重算。
+ISR.ApplySlotBorder(slot)
+local border_size_calls = slot._isr_slot_border.size_calls
+local icon_size_calls = slot._isr_slot_icon.size_calls
+ISR.RefreshSlotBorderLayout(slot)
+assert_equal(slot._isr_slot_border.size_calls, border_size_calls, "unchanged border size is not re-applied")
+assert_equal(slot._isr_slot_icon.size_calls, icon_size_calls, "unchanged icon size is not re-applied")
+
+-- 槽位尺寸变了才重新设
+slot.bg = { GetSize = function() return 96, 96 end }
+ISR.RefreshSlotBorderLayout(slot)
+assert_equal(slot._isr_slot_border.size_calls, border_size_calls + 1, "changed size is applied once")
+assert_equal(slot._isr_slot_border.width, 96 * ISR.SLOT_BORDER_SCALE, "border follows the new slot size")

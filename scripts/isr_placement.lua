@@ -8,6 +8,11 @@ local select_values = runtime.select or select
 local unpack_values = runtime.unpack or unpack or table.unpack
 local protected_call = runtime.xpcall or xpcall
 
+-- 提到模块级：每次 Shift 转移不必再新建一个闭包。
+local function Traceback(message)
+    return debug_lib ~= nil and debug_lib.traceback ~= nil and debug_lib.traceback(message, 2) or message
+end
+
 local function Pack(...)
     return { n = select_values("#", ...), ... }
 end
@@ -30,9 +35,6 @@ function ISR.WithTransferContext(context, fn, ...)
     local args = Pack(...)
     local function Invoke()
         return fn(unpack_values(args, 1, args.n))
-    end
-    local function Traceback(message)
-        return debug_lib ~= nil and debug_lib.traceback ~= nil and debug_lib.traceback(message, 2) or message
     end
 
     ISR.PushTransferContext(context)
@@ -72,6 +74,27 @@ function ISR.HasServerMarksForItem(owner, item)
         and #ISR.GetSortedServerMarksForPrefab(owner, item.prefab) > 0
 end
 
+-- 同一次 GiveItem 里，「这个物品有没有预留格」会被问两三遍
+-- （ShouldRoutePlacementByMarks → TryPlaceByMarks，容器路径还要再问一次）。
+-- 每次问都要枚举全部带标记的容器、建表、排序。标记只在这条链路之外变化，
+-- 所以第一次算完挂在 context 上，后续直接读。context 是每次 GiveItem 新建的，
+-- 不存在跨帧陈旧的问题。
+function ISR.GetContextMarks(context)
+    if context == nil then
+        return nil
+    end
+
+    if context.marks == nil
+        and context.owner ~= nil
+        and context.item ~= nil
+        and context.item.prefab ~= nil
+    then
+        context.marks = ISR.GetSortedServerMarksForPrefab(context.owner, context.item.prefab)
+    end
+
+    return context.marks
+end
+
 -- 只有「这个物品有预留格」才改写放置路由，其余一律交给原版逻辑。
 function ISR.ShouldRoutePlacementByMarks(context)
     return context ~= nil
@@ -81,7 +104,7 @@ function ISR.ShouldRoutePlacementByMarks(context)
         and context.item.components ~= nil
         and context.item.components.inventoryitem ~= nil
         and context.item:IsValid()
-        and ISR.HasServerMarksForItem(context.owner, context.item)
+        and #(ISR.GetContextMarks(context) or {}) > 0
 end
 
 -- 只能放物品栏的物品（余烬 / 灵魂）不参与预留：它们没有背包这个退路，
@@ -161,7 +184,9 @@ function ISR.TryPlaceByMarks(context)
 
     local skipped = {}
     local range_limit = ISR.GetContainerRangeLimit ~= nil and ISR.GetContainerRangeLimit() or nil
-    for _, mark in ipairs(OrderMarksForConfig(context.owner, ISR.GetSortedServerMarksForPrefab(context.owner, context.item.prefab))) do
+    local marks = ISR.GetContextMarks(context)
+        or ISR.GetSortedServerMarksForPrefab(context.owner, context.item.prefab)
+    for _, mark in ipairs(OrderMarksForConfig(context.owner, marks)) do
         local matches_target = target_guid == nil or mark.container_guid == target_guid
         if not matches_target then
             NoteSkip(skipped, mark, "target")

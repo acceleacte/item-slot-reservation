@@ -212,6 +212,11 @@ local function BuildStoragePath(player, inst)
     return nil
 end
 
+-- 路径格式，与 BuildStoragePath 的产出一一对应：
+--   "inv"              玩家自己
+--   "inv:<N>"          物品栏第 N 格里的容器
+--   "equip:<槽>"       装备栏某槽（head / hands / body / back…）里的容器
+--   "<上面任一>/<N>"   再往里一层：那个容器第 N 格里的容器（可继续接 /N）
 function ISR.ResolveStoragePath(player, path)
     if player == nil or path == nil then
         return nil
@@ -235,7 +240,7 @@ function ISR.ResolveStoragePath(player, path)
             if segment == "inv" then
                 current = player
             else
-                local kind, key = string.match(segment, "^(%a+):(.+)$")
+                local kind, key = string.match(segment, "^(%w+):(.+)$")
                 if kind == "inv" then
                     current = inventory.itemslots ~= nil and inventory.itemslots[ISR.ToNumber(key)] or nil
                 elseif kind == "equip" then
@@ -375,6 +380,11 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_REQUEST_SYNC, function(player)
     ISR.SyncAllMarksToClient(player)
 end)
 
+-- 全量同步请求的去重窗口。取值要求：大于一个 RTT（否则没等到回包就放行下一次问），
+-- 小于玩家能察觉的延迟。正常路径由 RPC_SYNC_BEGIN 清掉这个标记，这里的定时器只是兜底 ——
+-- 回包丢了也不会永久卡住后续请求。
+ISR.SNAPSHOT_REQUEST_TIMEOUT = 0.25
+
 function ISR.RequestMarkSnapshot()
     local player = ISR.GetLocalPlayer()
     if player == nil or ISR._client_snapshot_request_pending then
@@ -383,7 +393,7 @@ function ISR.RequestMarkSnapshot()
 
     ISR._client_snapshot_request_pending = true
     SendModRPCToServer(GetModRPC(ISR.RPC_NAMESPACE, ISR.RPC_REQUEST_SYNC))
-    player:DoTaskInTime(0.25, function()
+    player:DoTaskInTime(ISR.SNAPSHOT_REQUEST_TIMEOUT, function()
         ISR._client_snapshot_request_pending = nil
     end)
     return true

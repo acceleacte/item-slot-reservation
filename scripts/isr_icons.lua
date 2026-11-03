@@ -42,40 +42,72 @@ local function ReadWidgetSize(widget)
     return nil, nil
 end
 
+-- 依次试 bg / bgimage / image / 槽位自身，取第一个拿得到尺寸的。
+-- 这个函数在每帧的布局刷新里都会跑，不建中间表。
 local function GetSlotBaseSize(slot)
-    local size_sources =
-    {
-        slot ~= nil and slot.bg or nil,
-        slot ~= nil and slot.bgimage or nil,
-        slot ~= nil and slot.image or nil,
-        slot,
-    }
-
-    for _, source in ipairs(size_sources) do
-        local w, h = ReadWidgetSize(source)
-        if w ~= nil then
-            return math.min(w, h)
-        end
+    if slot == nil then
+        return ISR.SLOT_BORDER_FALLBACK_SIZE
     end
 
-    return ISR.SLOT_BORDER_FALLBACK_SIZE
+    local w, h = ReadWidgetSize(slot.bg)
+    if w == nil then
+        w, h = ReadWidgetSize(slot.bgimage)
+    end
+    if w == nil then
+        w, h = ReadWidgetSize(slot.image)
+    end
+    if w == nil then
+        w, h = ReadWidgetSize(slot)
+    end
+
+    return w ~= nil and math.min(w, h) or ISR.SLOT_BORDER_FALLBACK_SIZE
 end
 
-local function SyncSlotBorderSize(slot)
+-- 尺寸没变就不调 SetSize：这会走 UI 布局重算，每帧调一次是白烧的。
+-- 缓存值跟着自己的 widget 走，widget 只在为 nil 时创建，不会被换掉。
+local function SyncSlotBorderSize(slot, base_size)
     if slot == nil or slot._isr_slot_border == nil or slot._isr_slot_border.SetSize == nil then
         return
     end
 
-    local size = GetSlotBaseSize(slot) * ISR.SLOT_BORDER_SCALE
+    local size = (base_size or GetSlotBaseSize(slot)) * ISR.SLOT_BORDER_SCALE
+    if slot._isr_slot_border_size == size then
+        return
+    end
+
+    slot._isr_slot_border_size = size
     slot._isr_slot_border:SetSize(size, size)
 end
 
-local function SyncSlotIconSize(slot)
+-- 木框透明度取自配置项 border_opacity（0~1）。老配置里没有这一项时按 1（不透明）处理，
+-- 与加选项之前的观感一致。
+local function GetBorderAlpha()
+    local config = ISR.Config
+    if config == nil or config.border_opacity == nil then
+        return 1
+    end
+    return config.border_opacity
+end
+
+local function SyncSlotBorderTint(slot)
+    if slot == nil or slot._isr_slot_border == nil or slot._isr_slot_border.SetTint == nil then
+        return
+    end
+
+    slot._isr_slot_border:SetTint(1, 1, 1, GetBorderAlpha())
+end
+
+local function SyncSlotIconSize(slot, base_size)
     if slot == nil or slot._isr_slot_icon == nil or slot._isr_slot_icon.SetSize == nil then
         return
     end
 
-    local size = GetSlotBaseSize(slot) * ISR.SLOT_ICON_SCALE
+    local size = (base_size or GetSlotBaseSize(slot)) * ISR.SLOT_ICON_SCALE
+    if slot._isr_slot_icon_size == size then
+        return
+    end
+
+    slot._isr_slot_icon_size = size
     slot._isr_slot_icon:SetSize(size, size)
 end
 
@@ -177,6 +209,7 @@ function ISR.ApplySlotBorder(slot)
     end
 
     SyncSlotBorderSize(slot)
+    SyncSlotBorderTint(slot)
     slot._isr_slot_border:Show()
     slot._isr_slot_border:MoveToFront()
     MoveSlotLabelsToFront(slot)
@@ -187,9 +220,11 @@ function ISR.RefreshSlotBorderLayout(slot)
         return
     end
 
-    SyncSlotIconSize(slot)
+    -- 两个 widget 共用一次尺寸查询，别让 GetSlotBaseSize 跑两遍。
+    local base_size = GetSlotBaseSize(slot)
+    SyncSlotIconSize(slot, base_size)
     if slot._isr_slot_border ~= nil then
-        SyncSlotBorderSize(slot)
+        SyncSlotBorderSize(slot, base_size)
         slot._isr_slot_border:MoveToFront()
         MoveSlotLabelsToFront(slot)
     end

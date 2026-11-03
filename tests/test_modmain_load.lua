@@ -7,6 +7,7 @@ GetModConfigData = function(name)
         debug_log = false,
         pickup_to_container = true,
         pin_key = "V",
+        pin_modifier = "NONE",
     }
     return defaults[name]
 end
@@ -48,6 +49,7 @@ GLOBAL.Prefabs = {}
 GLOBAL.PICKUPSOUNDS = { wood = "aqol/new_test/wood", DEFAULT_FALLBACK = "dontstarve/HUD/collect_resource" }
 GLOBAL.MOUSEBUTTON_LEFT = 1000
 GLOBAL.MOUSEBUTTON_RIGHT = 1001
+GLOBAL.MOUSEBUTTON_MIDDLE = 1002
 GLOBAL.CONTROL_PRIMARY = 0
 GLOBAL.CONTROL_SECONDARY = 1
 GLOBAL.CONTROL_ACCEPT = 29
@@ -55,6 +57,19 @@ GLOBAL.KEY_V = 118
 GLOBAL.KEY_B = 98
 GLOBAL.KEY_N = 110
 GLOBAL.KEY_G = 103
+GLOBAL.KEY_F = 102
+GLOBAL.KEY_C = 99
+GLOBAL.KEY_X = 120
+GLOBAL.KEY_Z = 122
+GLOBAL.KEY_R = 114
+GLOBAL.KEY_T = 116
+GLOBAL.KEY_H = 104
+GLOBAL.KEY_J = 106
+GLOBAL.KEY_K = 107
+GLOBAL.KEY_L = 108
+GLOBAL.KEY_SHIFT = 402
+GLOBAL.KEY_CTRL = 401
+GLOBAL.KEY_ALT = 400
 
 EQUIPSLOTS = GLOBAL.EQUIPSLOTS
 TheWorld = GLOBAL.TheWorld

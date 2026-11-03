@@ -78,8 +78,23 @@ function ISR.GetServerSlotMark(player, container_guid, slot)
     } or nil
 end
 
+-- 「这一格对本物品开放吗」：没有标记，或标记就是这个 prefab。
+-- 不构造标记表 —— 候选格搜索按格调用，一次拾取要跑几十次，临时表纯属垃圾。
+function ISR.CanItemUseStoredMark(player, container_guid, slot, item)
+    local store = ISR.GetSlotMarkStoreForGUID(player, container_guid, false)
+    local mark = store ~= nil and store:GetMark(slot) or nil
+    if not IsValidStoredMark(mark) then
+        return true
+    end
+
+    return item ~= nil
+        and item.prefab ~= nil
+        and NormalizePrefab(item.prefab) == GetMarkPrefab(mark)
+end
+
 function ISR.IsServerSlotMarked(player, container_guid, slot)
-    return ISR.GetServerSlotMark(player, container_guid, slot) ~= nil
+    local store = ISR.GetSlotMarkStoreForGUID(player, container_guid, false)
+    return store ~= nil and IsValidStoredMark(store:GetMark(slot))
 end
 
 function ISR.ClearServerSlotMark(player, container_guid, slot, play_clear_sound)

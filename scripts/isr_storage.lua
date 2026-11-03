@@ -165,6 +165,8 @@ function ISR.IsStorageCarriedByPlayer(owner, storage)
     return inst == owner or GetStorageHolder(storage) == owner
 end
 
+-- 故意不做距离缓存：玩家和锚点容器都在动，缓存要跟着每帧失效，
+-- 失效判断的成本比直接量一次距离还高（两次 GetWorldPosition + 一次 sqrt）。
 function ISR.IsStorageWithinRange(owner, storage, limit)
     if owner == nil or storage == nil then
         return true

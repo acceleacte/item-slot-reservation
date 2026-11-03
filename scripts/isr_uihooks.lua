@@ -76,15 +76,17 @@ local function BuildSlotTooltip(slot)
     local mark = ISR.GetClientSlotMark(slot)
     local lines = {}
 
-    -- 已固定的格子不再提示左键（左键在此是取消），只留清除
+    -- 手势文案随配置变：键盘模式是「V + 左键」，鼠标模式是「Shift + 中键」。
+    local pin_label = ISR.GetPinChordLabel(ISR.SLOT_INTENT_PIN) or ""
+    local clear_label = ISR.GetPinChordLabel(ISR.SLOT_INTENT_CLEAR) or ""
+
+    -- 已固定的格子不再提示固定键（该键在此是取消），只留清除
     if mark == nil and GetSlotItemPrefab(slot) ~= nil then
-        table.insert(lines, ISR.GetLocalizedControl(ISR.SlotDisplayControls.PIN, "Left Mouse")
-            ..": "..ISR.GetText("PIN_MARK"))
+        table.insert(lines, pin_label..": "..ISR.GetText("PIN_MARK"))
     end
 
     if mark ~= nil then
-        table.insert(lines, ISR.GetLocalizedControl(ISR.SlotDisplayControls.CLEAR, "Right Mouse")
-            ..": "..ISR.GetText("CLEAR_MARK"))
+        table.insert(lines, clear_label..": "..ISR.GetText("CLEAR_MARK"))
     end
 
     if #lines == 0 then
@@ -152,6 +154,13 @@ AddClassPostConstruct("widgets/invslot", function(self)
 
         -- 固定：点已有物品的格子，把该格固定给这种物品
         if intent == ISR.SLOT_INTENT_PIN then
+            -- 切换模式（Shift+中键）下，已固定的格子直接清除，不要求格中仍是同一种物品：
+            -- 中键只有一个动作，玩家没法再分左右键。
+            if ISR.IsTogglePinKey() and ISR.GetClientSlotMark(slot) ~= nil then
+                ISR.Log("InvSlot toggle clear", "slot", tostring(slot.num))
+                return ISR.ClearClientSlotMark(slot)
+            end
+
             if ISR.IsSlotEmpty(slot) then
                 return false
             end
@@ -306,22 +315,57 @@ function ISR.QueueRefreshVisibleSlotIcons()
     end
 end
 
-AddClassPostConstruct("widgets/inventorybar", function(self)
-    local old_Rebuild = self.Rebuild
-    function self:Rebuild(...)
-        old_Rebuild(self, ...)
+-- 装备栏类模组（四五六格装备栏、Extra Equip Slots…）加装备槽的方式都是**替换类方法**：
+--     local base = Inv.Rebuild
+--     function Inv:Rebuild() base(self); ... self:AddEquipSlot(...) end
+-- 这里如果只包实例方法（function self:Rebuild），构造那一刻就把类方法的引用冻住了；
+-- 之后别的模组再换掉类方法，这次调用永远绕过它 —— 现象是「装了本模组之后，新增的
+-- 护符栏 / 背包栏不见了」。四五六格 priority 默认 0、按名字排在本模组之后，正好中招。
+-- 所以这个钩子必须挂在类上，并且只在加载期挂一次，让后加载的模组能链在我们外面。
+local function GetInventoryBarClass()
+    local call = ISR.Runtime ~= nil and ISR.Runtime.pcall or nil
+    if call == nil then
+        return nil
+    end
+
+    -- strict.lua 下读未声明的全局名会抛错，测试桩也没有 require：一律按「拿不到」处理
+    local ok_name, require_fn = call(function()
+        return ISR.GetGlobalValue("require", nil)
+    end)
+    if not ok_name or type(require_fn) ~= "function" then
+        return nil
+    end
+
+    local ok_class, class = call(require_fn, "widgets/inventorybar")
+    if ok_class and type(class) == "table" then
+        return class
+    end
+end
+
+local InventoryBarClass = GetInventoryBarClass()
+if InventoryBarClass ~= nil and not InventoryBarClass._isr_class_hooked then
+    InventoryBarClass._isr_class_hooked = true
+
+    local base_Rebuild = InventoryBarClass.Rebuild
+    local base_Refresh = InventoryBarClass.Refresh
+
+    function InventoryBarClass:Rebuild(...)
+        if base_Rebuild ~= nil then
+            base_Rebuild(self, ...)
+        end
         ApplyInventoryBarIcons(self)
         if ISR.RequestMarkSnapshot ~= nil then
             ISR.RequestMarkSnapshot()
         end
     end
 
-    local old_Refresh = self.Refresh
-    function self:Refresh(...)
-        old_Refresh(self, ...)
+    function InventoryBarClass:Refresh(...)
+        if base_Refresh ~= nil then
+            base_Refresh(self, ...)
+        end
         ApplyInventoryBarIcons(self)
     end
-end)
+end
 
 AddClassPostConstruct("widgets/containerwidget", function(self)
     local old_Open = self.Open
@@ -344,5 +388,16 @@ AddClassPostConstruct("widgets/containerwidget", function(self)
     function self:Close(...)
         open_container_widgets[self] = nil
         return old_Close(self, ...)
+    end
+
+    -- Close 不一定被调用：玩家死亡时 HUD 整体重建、别的模组直接把 widget 摘掉，
+    -- 表里就会留下失效 widget 并一直挡住 GC。Kill 是 Widget 的回收入口
+    -- （widgets/widget.lua:325，KillAllChildren 也走它）。
+    local old_Kill = self.Kill
+    if old_Kill ~= nil then
+        function self:Kill(...)
+            open_container_widgets[self] = nil
+            return old_Kill(self, ...)
+        end
     end
 end)

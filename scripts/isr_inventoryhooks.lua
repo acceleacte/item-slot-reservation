@@ -60,7 +60,7 @@ local function GetFallbackUnmarkedEmptySlot(inventory, item, placement_context)
         return nil, inventory.itemslots
     end
 
-    return ISR.GetNextUnmarkedEmptySlot(inventory, item, nil)
+    return ISR.GetNextUnmarkedEmptySlot(inventory, item)
 end
 
 local function AddPlayerInventoryPostInit(fn)
@@ -165,8 +165,10 @@ AddPlayerInventoryPostInit(function(self)
             end
         end
 
+        -- 这个判定要枚举全部带标记的容器；下面两个分支问的是同一件事，算一次。
+        local reserve_marked = ISR.ShouldReserveMarkedSlotsForItem(self.inst, inst)
         if slot == nil
-            and ISR.ShouldReserveMarkedSlotsForItem(self.inst, inst)
+            and reserve_marked
             and not ISR.CanFullyStackIntoAvailableStorage(self, inst)
         then
             local marked_slot, marked_container = GetFallbackUnmarkedEmptySlot(self, inst, placement_context)
@@ -182,7 +184,7 @@ AddPlayerInventoryPostInit(function(self)
             end
 
             slot = marked_slot
-        elseif slot == nil and ISR.ShouldReserveMarkedSlotsForItem(self.inst, inst) then
+        elseif slot == nil and reserve_marked then
             ISR.Log("Reserved inventory stackable shortcut", tostring(inst ~= nil and inst.prefab or nil))
         end
 

@@ -1,6 +1,6 @@
 name = "Item Slot Reservation"
 description = [[
-版本 0.1.5
+版本 0.1.6
 
 物品格预留（Item Slot Reservation）把储物格固定给指定物品。
 基本能放进物品栏的都能固定：草、树枝、木头、石头等材料，武器、工具、帽子等装备。
@@ -14,12 +14,17 @@ description = [[
 - 快速转移（Shift + 左键）只落进未预留的格、或该物品自己的预留格；物品栏没有可落点时直接进背包，不会先闪进别人的预留格。
 
 支持玩家物品栏、背包、随身容器和已装备容器；背包里的容器（比如桶）内部同样可以固定；切斯特、哈奇这类跟着你走的容器也算，没带眼骨时打开它一样能固定。
-按 V 键后鼠标左键点击已有物品的格子即可固定；同格再按一次取消。
+按住 Shift + 鼠标中键点击已有物品的格子即可固定；同一格再点一次取消。手势可在设置里改：修饰键（Shift / Ctrl / Alt / 无）+ 动作键（中键 / 右键 / 键盘键）。
 预留跟随容器保存：读档、下地穴（跨 shard）后自动恢复。
+
+更新日志：
+- 0.1.6：修复装了本模组后，装备栏模组（四五六格装备栏、Extra Equip Slots）新增的护符栏 / 背包栏整栏消失；顺带带上 0.1.52 的性能与稳定性改动。
+- 0.1.51：固定手势拆成「修饰键 + 动作键」两个设置项。
+- 0.1.5：存档数据不再依赖模组提供的组件，可安全卸载；0.1.41 及更早的档需先装 0.1.5 进一次游戏并保存。
 
 --------------------------------
 
-Version 0.1.5
+Version 0.1.6
 
 Item Slot Reservation fixes storage slots to specific items.
 Anything that fits in the inventory can be fixed: grass, twigs, logs, stone and other materials; weapons, tools, hats and other equipment.
@@ -33,11 +38,16 @@ Once fixed:
 - Quick transfer (Shift + left-click) only targets unreserved slots or the item's own reserved slot; when the inventory has no room for it the item goes straight to the backpack instead of briefly flickering into someone else's slot.
 
 Supports the player inventory, backpacks, carried containers and equipped containers; containers carried inside them (a tackle box in a backpack, for example) can be fixed too, and so can follower containers like Chester or Hutch.
-Hold V and left-click a slot that holds an item to fix it; click again to clear.
+Hold Shift and middle-click a slot that holds an item to fix it; middle-click again to clear. Both the modifier and the action key are configurable.
 Reservations are saved with the container and survive save/load and shard travel.
+
+Changelog:
+- 0.1.6: Fixed the amulet / backpack slot added by equip-slot mods (Extra Equip Slots, 四五六格装备栏) disappearing while this mod is enabled. Includes the 0.1.52 performance and stability work.
+- 0.1.51: The pin gesture is now two options: modifier plus action key.
+- 0.1.5: Saved data no longer depends on a component this mod provides, so the mod can be removed safely. Saves from 0.1.41 or earlier must load once with 0.1.5 and save before you disable it.
 ]]
 author = "acceleacte"
-version = "0.1.5"
+version = "0.1.6"
 api_version = 10
 dst_compatible = true
 dont_starve_compatible = false
@@ -52,18 +62,43 @@ icon = "modicon.tex"
 configuration_options =
 {
     {
-        name = "pin_key",
-        label = "Pin key / 固定键",
-        hover = "Hold this key and click a slot that already holds an item to fix that slot for it. Works for grass, twigs and every other resource.\n按住此键 + 左键点击已有物品的格子，即可把该格固定给这种物品。草、树枝等资源同样适用。",
+        name = "pin_modifier",
+        label = "Pin modifier / 修饰键",
+        hover = "Only used when the pin key below is a mouse button. NONE means no modifier.\n仅在下面的固定键是鼠标键时生效。NONE 表示不用修饰键。键盘键不需要修饰键。",
         options =
         {
+            { description = "Shift", data = "SHIFT" },
+            { description = "Ctrl", data = "CTRL" },
+            { description = "Alt", data = "ALT" },
+            { description = "None / 无", data = "NONE" },
+        },
+        default = "SHIFT",
+    },
+    {
+        name = "pin_key",
+        label = "Pin key / 固定键",
+        hover = "Keyboard key: hold it and click a slot that already holds an item. Left click pins, right click clears.\nMiddle / Right click: press it together with the modifier on a slot to toggle the mark.\n键盘键：按住它点击已有物品的格子，左键固定、右键清除（不需要修饰键）。中键 / 右键：与修饰键一起按下才会切换标记。",
+        options =
+        {
+            { description = "Middle click / 中键", data = "MIDDLE" },
+            { description = "Right click / 右键", data = "RIGHT" },
             { description = "V", data = "V" },
             { description = "B", data = "B" },
             { description = "N", data = "N" },
             { description = "G", data = "G" },
+            { description = "F", data = "F" },
+            { description = "C", data = "C" },
+            { description = "X", data = "X" },
+            { description = "Z", data = "Z" },
+            { description = "R", data = "R" },
+            { description = "T", data = "T" },
+            { description = "H", data = "H" },
+            { description = "J", data = "J" },
+            { description = "K", data = "K" },
+            { description = "L", data = "L" },
             { description = "None / 无", data = "NONE" },
         },
-        default = "V",
+        default = "MIDDLE",
     },
     {
         name = "icon_opacity",
@@ -79,6 +114,20 @@ configuration_options =
             { description = "100%", data = 1.00 },
         },
         default = 0.35,
+    },
+    {
+        name = "border_opacity",
+        label = "Border opacity / 边框透明度",
+        hover = "Opacity of the wooden frame drawn around a reserved slot.\n预留格木框的透明度。",
+        options =
+        {
+            { description = "20%", data = 0.20 },
+            { description = "40%", data = 0.40 },
+            { description = "60%", data = 0.60 },
+            { description = "80%", data = 0.80 },
+            { description = "100%", data = 1.00 },
+        },
+        default = 1.00,
     },
     {
         name = "debug_log",

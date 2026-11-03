@@ -90,6 +90,10 @@ end
 -- 按标记判断：这一单在物品栏里还有没有合法落点。
 -- 顺序与服务端一致：自己的空预留格 → 同类未满堆（该格没被别人预留）→ 未预留空格 → 装备栏堆叠。
 -- 返回假时服务端必定走「交给原版 GiveItem」，也就是背包/随身容器。
+--
+-- 注意：本函数判「有没有落点」，下面的 CanPredictIntoInventorySlot 判「这一格行不行」。
+-- 两者的判定顺序必须一致，改一处就得同步另一处 —— 不一致的表现是预测说没位置、
+-- 守卫却放行（或反过来），物品先闪进预留格再被服务端弹走。
 function ISR.CanPredictLandInInventory(inventory, item)
     if inventory == nil or item == nil then
         return true

@@ -11,6 +11,7 @@ local callbacks = {}
 -- 其余外部依赖用最小桩替掉。
 ISR =
 {
+    GetContainerSlotCount = function(container) return container:GetNumSlots() end,
     GetServerMarks = function(owner) return owner.marks or {} end,
     GetSortedServerMarksForPrefab = function(owner, prefab)
         return owner.marks ~= nil and owner.marks[prefab] or {}

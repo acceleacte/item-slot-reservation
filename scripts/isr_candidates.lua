@@ -158,7 +158,7 @@ local function GetSpecializedContainersForContainerItem(container, item)
 end
 
 local function GetFirstUnmarkedSlotInContainer(inventory, container, item)
-    for k = 1, container:GetNumSlots() do
+    for k = 1, ISR.GetContainerSlotCount(container) do
         if CanUseUnmarkedContainerSlot(inventory, container, item, k) then
             return k, container
         end
@@ -166,7 +166,7 @@ local function GetFirstUnmarkedSlotInContainer(inventory, container, item)
 end
 
 local function GetFirstUnmarkedSlotInInventory(inventory, item)
-    for k = 1, inventory.maxslots do
+    for k = 1, ISR.GetContainerSlotCount(inventory) do
         if CanUseUnmarkedInventorySlot(inventory, item, k) then
             return k, inventory.itemslots
         end
@@ -187,8 +187,10 @@ local function CanUseUnmarkedContainerStackSlot(inventory, container, item, slot
         and ISR.CanItemUseMarkedSlot(inventory.inst, container.inst ~= nil and container.inst.GUID or nil, slot, item)
 end
 
+-- 槽位表是 1..n 的数组，用数字索引遍历：pairs 的顺序不保证，
+-- 服务端与客户端各算一遍时会挑到不同的堆叠格。
 local function GetFirstUnmarkedStackSlotInContainer(inventory, container, item)
-    for k, _ in pairs(container.slots or {}) do
+    for k = 1, ISR.GetContainerSlotCount(container) do
         if CanUseUnmarkedContainerStackSlot(inventory, container, item, k) then
             return k, container
         end
@@ -209,13 +211,15 @@ local function CanUseUnmarkedInventoryStackSlot(inventory, item, slot)
 end
 
 local function GetFirstUnmarkedStackSlotInInventory(inventory, item)
-    for k, _ in pairs(inventory.itemslots or {}) do
+    for k = 1, ISR.GetContainerSlotCount(inventory) do
         if CanUseUnmarkedInventoryStackSlot(inventory, item, k) then
             return k, inventory.itemslots
         end
     end
 end
 
+-- 装备栏的键是 EQUIPSLOTS 字符串（head/hands/body…），没法数字索引；
+-- 可堆叠的装备极少，这里保留 pairs。
 local function GetFirstEquipStackSlot(inventory, item)
     if item.components == nil or item.components.stackable == nil then
         return nil
@@ -234,23 +238,11 @@ local function GetFirstEquipStackSlot(inventory, item)
     end
 end
 
-function ISR.GetNextUnmarkedEmptySlot(inventory, item, preferred_container)
+function ISR.GetNextUnmarkedEmptySlot(inventory, item)
     local overflow = inventory:GetOverflowContainer()
     local prioritize_overflow = overflow ~= nil and overflow:ShouldPrioritizeContainer(item)
     local useoverflow = CanUseOverflow(item, overflow)
     local specialized = GetSpecializedContainersForItem(inventory, item)
-
-    if preferred_container == inventory.itemslots then
-        local slot, container = GetFirstUnmarkedSlotInInventory(inventory, item)
-        if slot ~= nil then
-            return slot, container
-        end
-    elseif preferred_container ~= nil then
-        local slot, container = GetFirstUnmarkedSlotInContainer(inventory, preferred_container, item)
-        if slot ~= nil then
-            return slot, container
-        end
-    end
 
     if useoverflow and prioritize_overflow then
         local slot, container = GetFirstUnmarkedSlotInContainer(inventory, overflow, item)
@@ -323,10 +315,16 @@ function ISR.GetNextUnmarkedAvailableSlot(inventory, item)
         end
     end
 
-    return ISR.GetNextUnmarkedEmptySlot(inventory, item, nil)
+    return ISR.GetNextUnmarkedEmptySlot(inventory, item)
 end
 
+-- 「这一格对本物品开放吗」：格子没有标记，或标记就是这个 prefab。
+-- 走 CanItemUseStoredMark 不构造标记表 —— 这个判断在候选格搜索里是按格调的。
 function ISR.CanItemUseMarkedSlot(player, container_guid, slot, item)
+    if ISR.CanItemUseStoredMark ~= nil then
+        return ISR.CanItemUseStoredMark(player, container_guid, slot, item)
+    end
+
     local mark = ISR.GetServerSlotMark(player, container_guid, slot)
     return mark == nil or ISR.MarkMatchesItem(mark, item)
 end
@@ -464,6 +462,8 @@ function ISR.GetAvailableStackRoomInInventory(inventory, item)
         return 0
     end
 
+    -- 这一处用 pairs 就行：结果是求和，跟遍历顺序无关，
+    -- 不像下面找「第一个可落的格」那样需要确定顺序。
     local room = 0
     for slot, other_item in pairs(inventory.itemslots or {}) do
         if other_item ~= nil

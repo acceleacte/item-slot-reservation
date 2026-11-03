@@ -9,7 +9,7 @@
 | 项 | 值 |
 |---|---|
 | 模组名 | Item Slot Reservation |
-| 版本 | 0.1.41（`modinfo.lua`） |
+| 版本 | 0.1.53（`modinfo.lua`） |
 | 类型 | 服务器模组，`all_clients_require_mod = true`（2026-10-31 由 false 改来，见 §9.5），`client_only_mod = false` |
 | `api_version` | 10 |
 | 全局表 | `ISR`（同时挂到 `GLOBAL.ISR`） |
@@ -21,27 +21,27 @@
 
 ---
 
-## 2. 文件结构（4000 行 Lua，29 个测试）
+## 2. 文件结构（4300 行 Lua，31 个测试）
 
 ```
 modmain.lua                 19 行，13 个 modimport，顺序有依赖（env → config → icons → storage → markstores → slotmarks → placement → candidates → debug → persistence → inventoryhooks → clientpredict → uihooks）
-modinfo.lua                117 行，配置项 + 双语文案
+modinfo.lua                156 行，配置项 + 双语文案
 scripts/
-  isr_env.lua              244  GLOBAL 取值兜底、按键码归一化、点击意图、prefab 键工具、距离档位、i18n
-  isr_config.lua            27  读 GetModConfigData（pin_key / icon_opacity / debug_log / pickup_to_container / container_range）
-  isr_icons.lua            202  空格物品图标 + 木框渲染
-  isr_storage.lua          483  存储适配器注册表 + 内置适配器 + 容器归属判定 + 作用距离
-  isr_markstores.lua       153  组件挂载、按 GUID 找 store、标记容器注册表、随身实例递归枚举
-  isr_slotmarks.lua        490  服务端标记 CRUD、匹配判定、客户端缓存、拾取音效、5 个 RPC handler
-  isr_placement.lua        205  放置路由决策、标记优先级（容器 / 物品栏）、距离过滤、transfer 上下文栈
+  isr_env.lua              396  GLOBAL 取值兜底、按键码归一化、点击意图、prefab 键工具、距离档位、i18n
+  isr_config.lua            40  读 GetModConfigData（pin_key / pin_modifier / icon_opacity / border_opacity / debug_log / pickup_to_container / container_range）
+  isr_icons.lua            237  空格物品图标 + 木框渲染（透明度取自 `border_opacity`）
+  isr_storage.lua          485  存储适配器注册表 + 内置适配器 + 容器归属判定 + 作用距离
+  isr_markstores.lua       152  组件挂载、按 GUID 找 store、标记容器注册表、随身实例递归枚举
+  isr_slotmarks.lua        505  服务端标记 CRUD、匹配判定、客户端缓存、拾取音效、5 个 RPC handler
+  isr_placement.lua        230  放置路由决策、标记优先级（容器 / 物品栏）、距离过滤、transfer 上下文栈
   isr_candidates.lua       521  候选格搜索（堆叠/溢出/专用容器优先）
   isr_debug.lua            106  自检 + 控制台标记入口
-  isr_persistence.lua      390  客户端能力白名单、全量同步、旧开发版存档迁移、玩家级标记备份（含嵌套路径）
-  isr_inventoryhooks.lua   346  GiveItem / GetNextAvailableSlot / Shift 转移 hook
-  isr_clientpredict.lua    326  客户端落点预测（标记先行判落点 → 背包预测 / 守卫窗口）
-  isr_uihooks.lua          348  invslot / inventorybar / containerwidget 的 UI hook
+  isr_persistence.lua      400  客户端能力白名单、全量同步、旧开发版存档迁移、玩家级标记备份（含嵌套路径）
+  isr_inventoryhooks.lua   348  GiveItem / GetNextAvailableSlot / Shift 转移 hook
+  isr_clientpredict.lua    330  客户端落点预测（标记先行判落点 → 背包预测 / 守卫窗口）
+  isr_uihooks.lua          368  invslot / inventorybar / containerwidget 的 UI hook
   components/isr_slotmarkstore.lua  159  标记存储组件（OnSave/OnLoad、add_component_if_missing、owner、注册表登记）
-tests/                      29 个 lua 测试 + run_lua_tests.py
+tests/                      31 个 lua 测试 + run_lua_tests.py
 images/                     modicon + wood_frame_128_ARGB（木框贴图）
 ```
 
@@ -78,12 +78,33 @@ images/                     modicon + wood_frame_128_ARGB（木框贴图）
 
 ### 3.4 点击接管只有一条路径
 
-`ISR.GetSlotMouseIntent(button)`：按住 `pin_key`（默认 V）才返回意图，否则 `nil`，原版逻辑照常执行。
+`ISR.GetSlotMouseIntent(button)`：按住「修饰键 + 动作键」组成的固定手势才返回意图，否则 `nil`，原版逻辑照常执行。
 
-- 左键 → `SLOT_INTENT_PIN`；右键 → `SLOT_INTENT_CLEAR`。
-- 按钮码经 `ISR.NormalizeSlotButton` 归一化（`MOUSEBUTTON_*` ↔ `CONTROL_PRIMARY/ACCEPT/SECONDARY`）。
+手势拆成两个配置项（0.1.51 起）：
+
+| 配置 | 取值 | 说明 |
+|---|---|---|
+| `pin_modifier` | SHIFT（默认）/ CTRL / ALT / NONE | 合成键码 `KEY_SHIFT = 402`、`KEY_CTRL = 401`、`KEY_ALT = 400`，原版调试键也这么判（`scripts/debugkeys.lua:431`） |
+| `pin_key` | MIDDLE（默认）/ RIGHT / V B N G F C X Z R T H J K L / NONE | 动作键 |
+
+两类动作键的语义不同，别混：
+
+| 动作键 | 判定 | 语义 |
+|---|---|---|
+| 键盘键（V…L） | `IsKeyDown(keycode)` 必须为真，**修饰键不参与** | 左键 → `SLOT_INTENT_PIN`，右键 → `SLOT_INTENT_CLEAR`（老打法） |
+| 鼠标键（MIDDLE / RIGHT） | 修饰键必须按下，且只比 `button` | **只认它自己** → `SLOT_INTENT_PIN`，语义是切换（`ISR.IsTogglePinKey()`），左右键一律返回 `nil` |
+
+鼠标模式下左右键必须放行：`Shift + 左键` 是原版快速转移，吞掉等于把搬运功能废掉。这一条不要为了「少一次判断」合并掉。
+
+键盘模式反过来要求「不用修饰键」：老存档里 `pin_key` 有记录、`pin_modifier` 没有（新增项），会落到默认 SHIFT —— 若键盘键也要求修饰键，老玩家升级后按 V 直接失效。所以修饰键只对鼠标动作键生效。
+
+其余规则：
+
+- 按钮码经 `ISR.NormalizeSlotButton` 归一化（`MOUSEBUTTON_*` ↔ `CONTROL_PRIMARY/ACCEPT/SECONDARY`），中键原样透传 `MOUSEBUTTON_MIDDLE = 1002`。中键在原版脚本里除 `constants.lua` 的定义外零引用，无默认绑定。
+- 中键只走 `OnMouseButton` 一路，不产生 `OnControl`，但仍保留 200ms 去重（`slot._isr_intent_stamp`），键盘模式靠它挡住双路重复触发。
 - `invslot` 上 **`OnMouseButton` 和 `OnControl` 都要包**：拾取物品走 `OnControl(CONTROL_ACCEPT)`，只包鼠标挡不住点击。
-- 两路会对同一次点击各触发一次，用 `slot._isr_intent_stamp` 做 200ms 去重，否则连标两次 = 直接取消。
+- 切换模式下「已标记的格子」中键直接清除（`InvSlot toggle clear`），不看格中物品是否还是同一种 —— 中键只有一个动作，玩家没法再分左右键。
+- 0.1.51 之前的旧配置值 `SHIFT_MIDDLE` 由 `ISR.GetPinChord()` 归一化成 `MIDDLE + SHIFT`，老存档不炸。
 
 ### 3.5 悬停提示必须覆写 `GetTooltip`
 
@@ -101,7 +122,7 @@ function Widget:GetTooltip()
 end
 ```
 
-格子里有物品时，物品图 `self.tile` 是子 widget 且自带提示，**只调 `slot:SetTooltip(...)` 会被它盖掉** —— 表现就是「有物品的格子按住 V 看不到提示，空格反而正常」（0.1.0 首版的 bug，已修）。
+格子里有物品时，物品图 `self.tile` 是子 widget 且自带提示，**只调 `slot:SetTooltip(...)` 会被它盖掉** —— 表现就是「有物品的格子按住固定键看不到提示，空格反而正常」（0.1.0 首版的 bug，已修）。
 
 所以 `isr_uihooks.lua` 在 `AddClassPostConstruct("widgets/invslot")` 里额外覆写实例方法 `GetTooltip`：有接管串时直接返回 `_isr_tooltip_override`，否则回落原实现。新增提示逻辑照此办理，别再退回「只 SetTooltip」。
 
@@ -226,12 +247,28 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 档位 `ISR.ContainerRangeLimits`：`near = 10`、`medium = 24`、`far = 48`（世界单位，4 = 一格地皮）。切斯特的唤醒跟随距离是 14，所以 near 够它跟随用。拿不到 `Transform` 的实体一律放行：宁可送不进去，也别把物品卡在半路。跳过时日志 `Marked placement no hit ... skipped <guid>@<slot>:range`。
 
+### 3.10 高频查询的成本控制（0.1.52）
+
+`GiveItem` 是每次拾取都会走的路径，下面几处专门压成本。改动这些地方之前先看清「为什么省这一次」。
+
+| 热点 | 原来 | 现在 |
+|---|---|---|
+| 一次 GiveItem 里算几遍标记 | `ShouldRoutePlacementByMarks` → `TryPlaceByMarks` 内部再判一次 → `GetSortedServerMarksForPrefab` 每个路径各算一遍，合计 4 次全量枚举 | 第一次算完挂 `context.marks`（`ISR.GetContextMarks`），同一次 GiveItem 内全部命中，合计 1 次 |
+| 判断「这格对本物品开放吗」 | `CanItemUseMarkedSlot` → `GetServerSlotMark` 每次构造一个 `{container_guid, slot, prefab, order}` 表 | `ISR.CanItemUseStoredMark` 直接读 store 比对 prefab，不建表（候选格搜索按格调用，一次拾取几十次） |
+| 「这格有预留吗」 | `IsServerSlotMarked` = `GetServerSlotMark(...) ~= nil`，同样建表 | 直接 `IsValidStoredMark(store:GetMark(slot))` |
+| 边框/图标尺寸 | `OnUpdate` 每帧走 `RefreshSlotBorderLayout`，`GetSlotBaseSize` 调两次、`SetSize` 每帧调 | 一次 `GetSlotBaseSize` 供两个 widget 用；尺寸与上次相同就不调 `SetSize`（它触发 UI 布局重算） |
+| `GetSlotBaseSize` | 每次调用建一张 4 元素候选表 | 顺序 `nil` 检查，不分配 |
+
+**故意不做跨调用缓存**（按玩家缓存 `GetServerMarks`）：缓存的失效点散在 `SetMark` / `ClearMark` / `OnLoad` / `RestoreMarkBackup` / 容器注销五处，漏一处就是「物品进错格」这类难查的问题。实际规模是个位数容器（玩家物品栏 + 背包 + 几个箱子），枚举成本远低于一次缓存不一致的代价。要加就得先有能证明这一层是瓶颈的 profiler 数据。
+
+`GetContextMarks` 的缓存只活在单个 `context` 里（每次 GiveItem 由 `MakePlacementContext` 新建），不存在跨帧陈旧。
+
 ---
 
 ## 4. 数据流
 
 ```
-客户端按住 V 点格
+客户端按住固定手势点格
   → PinClientSlotMark：读格中物品 prefab，写本地缓存（乐观显示图标）
   → set_slot_mark RPC
   → 服务端校验（prefab 合法 / 容器可标记 / 槽位在范围 / 格子为空或格中物品与标记匹配）
@@ -272,14 +309,23 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 | 操作 | 默认键位 |
 |---|---|
-| 固定 / 取消固定（点已有物品的格子） | `V` + 左键 |
-| 清除标记（不要求格子为空） | `V` + 右键 |
+| 固定 / 取消固定（点已有物品的格子） | `Shift` + 中键 |
+| 清除标记（不要求格子为空） | 鼠标模式：再按一次中键；键盘模式：固定键 + 右键 |
 | 控制台预留 | `ISR.DebugSetPrefabMark(3, "cutgrass")`，背包 `(2, "twigs", true)` |
 | 控制台清除 | `ISR.DebugClearSlotMark(3)` |
 
-配置项（`isr_config.lua` 读）：`pin_key`（V/B/N/G/NONE）、`icon_opacity`（0~1，默认 0.35）、`debug_log`、`pickup_to_container`（默认 false；只管世界容器，随身容器永远接收）、`container_range`（near / medium / far，默认 medium）。
+配置项（`isr_config.lua` 读）：`pin_modifier`（SHIFT / CTRL / ALT / NONE，默认 SHIFT）、`pin_key`（MIDDLE / RIGHT / V B N G F C X Z R T H J K L / NONE，默认 MIDDLE）、`icon_opacity`（0~1，默认 0.35）、`border_opacity`（0~1，默认 1）、`debug_log`、`pickup_to_container`（默认 false；只管世界容器，随身容器永远接收）、`container_range`（near / medium / far，默认 medium）。
 
-**不要**再加 `mark_modifier` / `prefab_mark` 这类选项：早期开发版曾用组合键循环标记、并用开关控制物品标记，0.1.0 已把它们删掉，只剩「按住固定键点格子」一条路径。
+两个透明度都画在同一个格子上，改其中一个不影响另一个：
+
+| 配置 | 作用对象 | 默认 | 实现 |
+|---|---|---|---|
+| `icon_opacity` | 空预留格里那件物品的图标 | 0.35 | `ApplyIconWidget` 的 `SetTint(1,1,1,alpha)` |
+| `border_opacity` | 木框贴图 `wood_frame_128_ARGB` | 1（不透明） | `isr_icons.lua` 的 `SyncSlotBorderTint`，在 `ApplySlotBorder` 里跟着 `SetSize` 一起刷 |
+
+`GetBorderAlpha` 在 `ISR.Config.border_opacity` 为 nil 时回落 1：老档的 `modsettings` 里没有这一项，缺值不能让木框变透明。0 等于不画框（widget 仍在，`SetClickable(false)`，不挡点击）。运行时改配置不生效，游戏要重启。
+
+**不要**再加 `mark_modifier` / `prefab_mark` 这类选项：早期开发版曾用组合键循环标记、并用开关控制物品标记，0.1.0 已把它们删掉，只剩「按住固定手势点格子」一条路径。
 
 ---
 
@@ -310,22 +356,48 @@ python tests/run_lua_tests.py
 1. lupa 不在仓库里（避免把二进制依赖提交进 git）；`run_lua_tests.py` 依次找 `ISR_LUPA_PATH` 环境变量、`tests/../.lua-test-runtime`、工作区级的 `../../.lua-test-runtime`。实际装在工作区根的 `.lua-test-runtime`（`Don't Starve-mod\.lua-test-runtime`）。
 2. lupa 2.8（Lua 5.5）的 `io.open` 读不了中文路径 → 仓库路径本身是 ASCII，可以原地跑；要换成含中文的目录就得先 `cp -r` 到纯 ASCII 目录。
 
-2026-11-01 实测：`PASS 29 test files`。新增/改动功能时同步补 `tests/test_*.lua`，跑了再交付。
+2026-11-02 实测：`PASS 31 test files`（`test_pin_chord.lua` 覆盖修饰键 + 动作键组合，`test_mark_query.lua` 覆盖标记查询的缓存与「不建表」判定）。新增/改动功能时同步补 `tests/test_*.lua`，跑了再交付。
 
 ---
 
 ## 8. 风险
 
 - **Hook 面很宽**：`GiveItem`、`GetNextAvailableSlot`、`MoveItemFrom*`、`invslot.OnMouseButton`、`invslot.OnControl`、`containerwidget` / `inventorybar`。与容器扩容、自动整理、Shift 增强类模组冲突概率高，表现是「物品进错格」而不是崩溃。
+- **HUD 类钩子必须挂在类上，不能只包实例**（0.1.53 修）：装备栏类模组（四五六格 `workshop-3173431824`、Extra Equip Slots `workshop-375850593`）加装备槽的写法都是 `local base = Inv.Rebuild; function Inv:Rebuild() base(self); ... self:AddEquipSlot(...) end`。本模组若用 `AddClassPostConstruct` 在**构造期**包 `self.Rebuild`，就把当时的类方法引用冻在实例字段上；后加载的模组再换掉类方法，这次调用永远绕过它 —— 现象正是「装了本模组之后，新增的护符栏 / 背包栏不见了」。四五六格 `priority` 默认 0、按 `modinfo.name` 排在本模组之后，必中；Extra Equip Slots `priority = 10` 先于本模组加载，所以只有它时不出问题。现在改为加载期 `require("widgets/inventorybar")` 取类、包**类方法**（`isr_uihooks.lua` 的 `GetInventoryBarClass` + `_isr_class_hooked` 防重包），回归测试 `tests/test_inventorybar_hook.lua`。以后加 HUD / Widget 钩子一律照此办理；`containerwidget` 那组仍是实例包法，改之前先确认没有模组按类方法加控件。
 - **未装客户端的玩家看不到预留**：体验不对称。要对称就把 `all_clients_require_mod` 改回 `true`。
 - **物品栏全被预留时等于「对其它物品满格」**：这不是 bug，是预留语义的直接结果。0.1.3 起改用「落背包」兜底；但背包也满、或来源就是背包时物品仍留在原处（原版行为）。
 - **口袋专用物品（余烬/灵魂）必须绕过预留**：`canonlygoinpocket`（以太余烬、查理玫、灵魂罐）与 `canonlygoinpocketorpocketcontainers`（沃拓克斯灵魂）没有背包退路，被预留拦住就会掉地上；余烬还 `canbepickedup=false`，一掉就等于丢了。它们由 `ISR.IsPocketOnlyItem` 识别，`ShouldReserveMarkedSlotsForItem` 直接返回假；落进预留格时顺手清掉那格的预留。加新的「只能放物品栏」物品时先查它在 prefab 里用的是哪个字段。
 - ~~客户端预测不认预留~~：原版 `inventory_classified:ReceiveItem` 先把物品画进固定格、服务端选定别的落点后回滚，只闪一帧不影响归属。已在 `isr_clientpredict.lua` 里处理（§3.7）；改动预测相关代码时别把这两层拆掉。
 - 沙箱限制：mod 环境里 `setmetatable/pcall/tonumber/next` 等为 nil，走 `GLOBAL`；禁止 `io.open` 写盘（引擎 2025-01 起只读）。
 - **`GLOBAL["名字"]` 写错就把服务器打崩**：服务端开着 `scripts/strict.lua`，读 `_G` 上没声明过的名字会直接抛 `variable 'Xxx' is not declared`。0.1.4 第一次装就是这么崩的（`GLOBAL["IsMasterSimulation"]`——它其实是 `isr_markstores.lua` 里自己定义的局部函数，不是全局）。规则：`ISR.GetGlobalValue` 只传确实是游戏常驻全局的名字；要判服务端就用 `TheWorld.ismastersim`。`tests/test_modmain_load.lua` 里有一个「严格 GLOBAL」替身，加新名字会让测试先炸。
-- **客户端兜底会多发 RPC**：`replica.inventoryitem` 不联网 `owner`，客户端拼不出「切斯特身上的背包」这类归属链，所以 `IsClientMarkableContainerInst` 最后一段是「`GetNumSlots() > 0` 就放行，交给服务端裁决」。代价：对着地上的普通箱子按 V + 左键也会发请求，服务端 `reason = "not_markable"` 拒绝并回推，表现为闪一下清除音。这是换取「任何没见过的容器都能试」必须付的账，不要为了消掉这个音效把兜底删掉。
+- **客户端兜底会多发 RPC**：`replica.inventoryitem` 不联网 `owner`，客户端拼不出「切斯特身上的背包」这类归属链，所以 `IsClientMarkableContainerInst` 最后一段是「`GetNumSlots() > 0` 就放行，交给服务端裁决」。代价：对着地上的普通箱子按固定手势也会发请求，服务端 `reason = "not_markable"` 拒绝并回推，表现为闪一下清除音。这是换取「任何没见过的容器都能试」必须付的账，不要为了消掉这个音效把兜底删掉。
 - **作用距离之外的固定格会静默失效**：`container_range` 挡住时物品走原版落点回物品栏，玩家看到的就是「固定了但不进容器」。排查先看日志 `skipped <guid>@<slot>:range`，再问玩家档位选的是哪个。
+- **中键手势在部分鼠标/驱动上不灵**：中键被驱动绑成宏或切 DPI 时，游戏收不到 `MOUSEBUTTON_MIDDLE`。这类玩家改回键盘动作键即可，选项一直留着。
+- **改默认手势不会迁移老存档的设置**：`modsettings` 里存过 `pin_key` 的玩家仍按旧值走（`PIN key = V`），要自己改一次。README 里写明了这一点。
 - 许可证：MIT（见 `LICENSE`）。
+
+### 8.5 外部 review 的处置（2026-11-02，0.1.52）
+
+一份逐行 review 提了 16 条。采纳 8 条、误报 3 条、判断为不划算 5 条。记在这里，免得下次再被同样的建议带偏。
+
+| # | 建议 | 结论 |
+|---|---|---|
+| 1 | `GetAvailableStackRoomInContainer` 的 `acceptsstacks` 判断有 bug | **误报**。`not (a or (b and c))`，两边都为假时括号内是 `false`，`not false = true` → 会提前 `return 0`。原版 `Container:AcceptsStacks()` 就是 `return self.acceptsstacks`（`components/container.lua:322`），两种写法等价。不动 |
+| 2 | `GetFirstUnmarkedStackSlotIn*` 的 `pairs` 改成数字索引 | **采纳**。Lua 5.1 的 `next` 对数组部分确实递增，但这是实现细节不是语言保证；改成 `1..GetContainerSlotCount`，服务端/客户端挑堆叠格的结果确定化 |
+| 3 | `GetNextUnmarkedEmptySlot` 的 `preferred_container` 是死参数 | **采纳**，删除。两处调用都传 `nil`，两个分支永远不进 |
+| 4 | 按玩家缓存 `GetServerMarks` | **不采纳**（跨调用缓存）。只做「同一次 GiveItem 内复用」，见 §3.10 |
+| 5 | `GetSpecializedContainersForItem` 空表早退 | **不采纳**。原版 `Inventory:GetSpecializedContainers()`（`components/inventory.lua:1481`）只返回 `nil` 或非空表，空表不会出现 |
+| 6 | `OnUpdate` 移除 `RefreshSlotBorderLayout` | **部分采纳**。不移除（怕别的模组动态改槽位尺寸），改为尺寸缓存 + 只查一次尺寸，见 §3.10 |
+| 7 | 循环内重复查 store | **部分采纳**。没抽 store 局部变量，改的是更贵的那一半：`CanItemUseStoredMark` 不建表 |
+| 8 | `Traceback` 闭包提到模块级 | **采纳** |
+| 9 | 两个预测函数加同步维护说明 | **采纳**（注释） |
+| 10 | 合并两处 `AddComponentPostInit("inventory")` | **不采纳**。省的是加载期两次注册，收益接近零，改动面反而大 |
+| 11 | 统一用 `ISR.GetContainerSlotCount` | **部分采纳**。找「第一个」的两处统一了；`GetAvailableStackRoomInInventory` 保持 `pairs`（求和与顺序无关，换成槽数上限反而多一层对 `GetNumSlots` 的依赖） |
+| 12 | `0.25` 魔数提成常量 | **采纳**，并写清取值依据（`ISR.SNAPSHOT_REQUEST_TIMEOUT`） |
+| 13 | `open_container_widgets` 补销毁清理 | **采纳**。包 `Kill`（`widgets/widget.lua:325`，`KillAllChildren` 也走它）；Widget 类没有 `OnDestroy` |
+| 14 | `GetSlotBaseSize` 别每次建表 | **采纳** |
+| 15 | `IsStorageWithinRange` 不缓存 | **采纳**（注释写明理由） |
+| 16 | `ResolveStoragePath` 的正则放宽到 `%w+` | **采纳**，并补了路径格式注释 |
 
 ---
 

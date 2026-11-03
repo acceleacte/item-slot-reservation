@@ -11,7 +11,11 @@ GLOBAL =
     CONTROL_PRIMARY = 0,
     MOUSEBUTTON_LEFT = 1000,
     MOUSEBUTTON_RIGHT = 1001,
+    MOUSEBUTTON_MIDDLE = 1002,
     KEY_V = 118,
+    KEY_SHIFT = 402,
+    KEY_CTRL = 401,
+    KEY_ALT = 400,
     tonumber = tonumber,
 }
 
@@ -26,7 +30,9 @@ GetModConfigData = function(name)
     local values =
     {
         pin_key = "V",
+        pin_modifier = "NONE",
         icon_opacity = 0.35,
+        border_opacity = 0.6,
         debug_log = false,
     }
     return values[name]
@@ -34,6 +40,8 @@ end
 
 dofile(ISR_TEST_ROOT.."/scripts/isr_env.lua")
 dofile(ISR_TEST_ROOT.."/scripts/isr_config.lua")
+
+assert_equal(ISR.Config.border_opacity, 0.6, "border opacity is read from the config")
 
 assert_equal(ISR.GetSlotMouseIntent(GLOBAL.MOUSEBUTTON_LEFT), nil, "no pin key means no interception")
 pin_pressed = true
