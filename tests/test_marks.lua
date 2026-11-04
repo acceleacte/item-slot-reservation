@@ -111,6 +111,15 @@ assert_equal(#sorted, 1, "prefab lookup normalizes the query")
 assert_equal(sorted[1].slot, 4, "prefab lookup returns the reserved slot")
 assert_equal(#ISR.GetSortedServerMarksForPrefab(player, "log"), 0, "unreserved prefab has no slots")
 
+-- 标记不记名：容器上的每一格对能用这只容器的人都可见、可用（0.1.8）。
+player.userid = "KU_me"
+player.components.isr_slotmarkstore:SetMark(5, "log", 20)
+local shared_marks = ISR.GetServerMarks(player)
+assert_equal(shared_marks[ISR.GetSlotKey(player.GUID, 5)].prefab, "log", "every mark on a usable container is visible")
+assert_equal(shared_marks[ISR.GetSlotKey(player.GUID, 3)].prefab, "cutgrass", "older marks are visible too")
+assert_equal(shared_marks[ISR.GetSlotKey(player.GUID, 5)].owner, nil, "marks carry no owner")
+player.components.isr_slotmarkstore:ClearMark(5)
+
 -- 不匹配的物品被放进预留格时清标记；匹配时保留 --------------------------------
 assert_equal(ISR.ClearServerSlotMarkIfItemMismatches(player, player.GUID, 3, { prefab = "cutgrass" }), false, "matching item keeps the mark")
 assert_equal(ISR.GetServerSlotMark(player, player.GUID, 3).prefab, "cutgrass", "mark survives a matching item")
@@ -120,8 +129,12 @@ assert_equal(ISR.GetServerSlotMark(player, player.GUID, 3), nil, "mismatched mar
 -- 容器路径：格子被别的东西占了就解除预留（不要求容器有在线主人） ----------------
 local chest = { GUID = 900, components = {} }
 chest.components.isr_slotmarkstore = MarkStore(chest)
-chest.components.isr_slotmarkstore:SetOwner("KU_player")
 chest.components.isr_slotmarkstore:SetMark(2, "log", 9)
+
+-- 箱子不是谁的随身物品 ⇒ 共享容器；标记变化广播给所有装了这个模组的玩家。
+ISR.IsSharedMarkContainer = function(_, inst) return inst == chest end
+ISR.IsMarkContainerVisibleTo = function() return true end
+ISR.IsClientCapable = function() return true end
 
 local synced = {}
 ISR.SyncMarkToClient = function(target, guid, slot, prefab, play_sound)
@@ -147,7 +160,8 @@ assert_equal(synced[1].slot, 3, "sync carries the slot")
 assert_equal(synced[1].sound, true, "the clear sync plays the sound")
 assert_equal(ISR.ClearContainerSlotMarkOnMismatch(chest, 99, { prefab = "log" }), false, "an unmarked slot has nothing to clear")
 
--- 容器的逻辑主人：mark store 上记的 userid → 在线玩家
-assert_equal(ISR.GetMarkOwnerPlayer(chest), owner_player, "the store owner resolves to the online player")
-chest.components.isr_slotmarkstore:SetOwner("KU_offline")
-assert_equal(ISR.GetMarkOwnerPlayer(chest), nil, "an offline owner resolves to nil")
+-- 容器不记名：谁打开着箱子就用谁来按标记路由；没人打开就没有路由主人
+chest.components.container = { IsOpenedBy = function(_, doer) return doer == owner_player end }
+assert_equal(ISR.GetMarkOwnerPlayer(chest), owner_player, "the opened container resolves to the player using it")
+chest.components.container.IsOpenedBy = function() return false end
+assert_equal(ISR.GetMarkOwnerPlayer(chest), nil, "nobody opens it means no routing owner")

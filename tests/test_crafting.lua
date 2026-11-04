@@ -121,15 +121,12 @@ local chester = { GUID = 2, components = {} }
 chester.Transform = { GetWorldPosition = function() return 5, 0, 0 end }
 chester.IsInLimbo = function() return false end
 chester.components.isr_slotmarkstore = MarkStore(chester)
-chester.components.isr_slotmarkstore:SetOwner(player.userid)
 
 -- 世界里的普通箱子，挨着玩家
 local chest = { GUID = 3, components = {} }
 chest.Transform = { GetWorldPosition = function() return 4, 0, 0 end }
 chest.IsInLimbo = function() return false end
 chest.components.isr_slotmarkstore = MarkStore(chest)
-chest.components.isr_slotmarkstore:SetOwner(player.userid)
-chest.components.inventoryitem = { GetGrandOwner = function() return nil end }
 
 local function NewStackItem(prefab, owner, count)
     local item
@@ -506,6 +503,47 @@ assert_true(ISR.ShouldMuteRecipeReady(), "silent mode mutes regardless of timing
 ISR.Config.craft_ping = "original"
 assert_false(ISR.ShouldMuteRecipeReady(), "original mode never mutes")
 ISR.Config.craft_ping = "borrow"
+
+-- 材料行显示（0.1.8）：原版用 inventory:Has 的 num_found 画「有/需」，
+-- 借料的材料要算进去，否则界面显示「1/2」红字，玩家以为做不了。
+ISR._craft_supply = { log = 3 }
+local base_Has = function(_, prefab, amount)
+    if prefab == "log" then
+        return false, 1
+    end
+    return true, amount
+end
+local fake_inventory = { Has = base_Has }
+
+local observed
+local fake_SetRecipe = function()
+    observed = { fake_inventory:Has("log", 4, true) }
+end
+ISR.WithSupplyAwareInventory(fake_inventory, fake_SetRecipe, {}, {})
+
+assert_true(observed[1], "borrowed supply makes the ingredient show as enough")
+assert_equal(observed[2], 4, "the shown count includes the borrowable supply")
+assert_equal(fake_inventory.Has, base_Has, "Has is restored after the recipe is built")
+
+-- 供应不够时仍然判负，但数字要显示真实可用量（1 + 2 = 3 / 4）
+ISR._craft_supply = { log = 2 }
+ISR.WithSupplyAwareInventory(fake_inventory, fake_SetRecipe, {}, {})
+assert_false(observed[1], "not enough supply still reports short")
+assert_equal(observed[2], 3, "short case shows what is actually available")
+
+-- 已经够的材料不受影响
+ISR._craft_supply = { log = 3 }
+local enough
+ISR.WithSupplyAwareInventory(fake_inventory, function()
+    enough = { fake_inventory:Has("twigs", 5, true) }
+end, {}, {})
+assert_true(enough[1], "already satisfied ingredients stay satisfied")
+assert_equal(enough[2], 5, "already satisfied count is untouched")
+
+-- 原版 SetRecipe 抛错时也要还原 Has，别把坏掉的包装留在实例上
+local ok = pcall(ISR.WithSupplyAwareInventory, fake_inventory, function() error("boom") end, {}, {})
+assert_false(ok, "errors from the wrapped call are re-raised")
+assert_equal(fake_inventory.Has, base_Has, "Has is restored even when the recipe build fails")
 
 ISR._craft_supply = nil
 ISR.Config.craft_from_container = true

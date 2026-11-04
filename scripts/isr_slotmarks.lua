@@ -38,12 +38,22 @@ function ISR.MarkMatchesItem(mark, item)
         and NormalizePrefab(item.prefab) == prefab
 end
 
--- 枚举该玩家所有带标记的容器。走注册表（有标记的容器都登记过），
+-- 标记不记名：容器是独立的东西，谁打开谁都能固定、清除、使用。
+-- 容器不跟人绑定，也不存在「这只箱子归谁」的概念（用户 2026-11-04 指定）。
+-- 原来的「第一个落标记的人成为容器 owner、别人改不了」整段已删除。
+
+-- 枚举该玩家能用的标记。走注册表（有标记的容器都登记过），
 -- 这样跟随型容器（切斯特、哈奇）和别的模组容器也能算进来。
+-- 两段范围：
+--   * 自己的随身容器（物品栏、背包、背包里的桶）
+--   * 多人共享的世界容器（基地箱子、无主切斯特）—— 上面的标记所有人可见、可用，
+--     谁拾取都回这个格；别人的背包不在其中（见 ISR.IsSharedMarkContainer）。
 function ISR.GetServerMarks(player)
     local marks = {}
     for _, inst in ipairs(ISR.GetMarkContainerInstances()) do
-        if ISR.IsStorageOwnedByPlayer(player, inst) then
+        if ISR.IsStorageOwnedByPlayer(player, inst)
+            or (ISR.IsSharedMarkContainer ~= nil and ISR.IsSharedMarkContainer(player, inst))
+        then
             local store = inst.components ~= nil and inst.components.isr_slotmarkstore or nil
             if store ~= nil then
                 for slot, mark in pairs(store:GetMarks()) do
@@ -97,13 +107,77 @@ function ISR.IsServerSlotMarked(player, container_guid, slot)
     return store ~= nil and IsValidStoredMark(store:GetMark(slot))
 end
 
+-- 标记不记名之后的同步口径：
+--   共享世界容器（基地箱子、无主切斯特）的标记谁都看得见 ⇒ 变化要广播给所有玩家；
+--   随身容器只有主人看得见 ⇒ 只推给它的主人。
+function ISR.BroadcastMarkChange(container_guid, slot, prefab, play_clear_sound)
+    local all_players = ISR.GetGlobalValue("AllPlayers", nil)
+    for _, player in pairs(all_players or {}) do
+        if player ~= nil
+            and ISR.IsClientCapable ~= nil
+            and ISR.IsClientCapable(player)
+            and ISR.IsMarkContainerVisibleTo ~= nil
+            and ISR.IsMarkContainerVisibleTo(player, container_guid)
+        then
+            ISR.SyncMarkToClient(player, container_guid, slot, prefab, play_clear_sound)
+        end
+    end
+end
+
+function ISR.SyncMarkChangeToViewers(container_inst, slot, prefab, play_clear_sound)
+    local container_guid = container_inst ~= nil and container_inst.GUID or nil
+    if container_guid == nil then
+        return false
+    end
+
+    if ISR.IsSharedMarkContainer ~= nil and ISR.IsSharedMarkContainer(nil, container_inst) then
+        ISR.BroadcastMarkChange(container_guid, slot, prefab, play_clear_sound)
+        return true
+    end
+
+    local storage = ISR.GetStorageFromEntity ~= nil and ISR.GetStorageFromEntity(container_inst) or nil
+    local owner = storage ~= nil
+        and ISR.ResolvePlayerStorageOwner ~= nil
+        and ISR.ResolvePlayerStorageOwner(storage, "container")
+        or nil
+    if owner ~= nil then
+        ISR.SyncMarkToClient(owner, container_guid, slot, prefab, play_clear_sound)
+        return true
+    end
+
+    -- 判不出主人（随身容器的实体暂时没挂 owner 链）时宁可多发，不要漏发。
+    ISR.BroadcastMarkChange(container_guid, slot, prefab, play_clear_sound)
+    return true
+end
+
+-- 这名玩家该不该收到这只容器的标记：自己的随身容器，或者共享的世界容器。
+function ISR.IsMarkContainerVisibleTo(player, container_guid)
+    local inst = container_guid == player.GUID
+        and player
+        or ISR.GetContainerInstFromGUID(container_guid)
+    if inst == nil then
+        return false
+    end
+
+    return ISR.IsStorageOwnedByPlayer(player, inst)
+        or (ISR.IsSharedMarkContainer ~= nil and ISR.IsSharedMarkContainer(player, inst))
+end
+
 function ISR.ClearServerSlotMark(player, container_guid, slot, play_clear_sound)
     local store = ISR.GetSlotMarkStoreForGUID(player, container_guid, false)
     if store == nil or not store:ClearMark(slot) then
         return false
     end
 
-    ISR.SyncMarkToClient(player, container_guid, slot, nil, play_clear_sound == true)
+    local inst = container_guid == player.GUID
+        and player
+        or ISR.GetContainerInstFromGUID(container_guid)
+    if inst ~= nil then
+        ISR.SyncMarkChangeToViewers(inst, slot, nil, play_clear_sound == true)
+    else
+        ISR.SyncMarkToClient(player, container_guid, slot, nil, play_clear_sound == true)
+    end
+
     ISR.Log("Server mark cleared", "container", tostring(container_guid), "slot", tostring(slot), "clear_sound", tostring(play_clear_sound == true))
     return true
 end
@@ -126,39 +200,27 @@ function ISR.ClearServerSlotMarkIfItemMismatches(player, container_guid, slot, i
     return ISR.ClearServerSlotMark(player, container_guid, slot, true)
 end
 
-local function FindPlayerByUserid(userid)
-    if userid == nil then
+-- 容器不记名：谁在用就现找 —— 当前打开它的玩家。
+-- 基地箱子、没带眼骨的切斯特没有 inventoryitem 主人链，容器钩子需要一个 player
+-- 才能按标记路由（回预留格 / 避开预留格）。以前靠 store 上记的 owner，
+-- 现在标记不记名，改为看「此刻谁打开着它」；没人打开就返回 nil。
+function ISR.GetMarkOwnerPlayer(container_inst)
+    local container = container_inst ~= nil
+        and container_inst.components ~= nil
+        and container_inst.components.container
+        or nil
+    if container == nil or container.IsOpenedBy == nil then
         return nil
     end
 
     local all_players = ISR.GetGlobalValue("AllPlayers", nil)
-    if all_players == nil then
-        return nil
-    end
-
-    for _, player in pairs(all_players) do
-        if player ~= nil and player.userid == userid then
+    for _, player in pairs(all_players or {}) do
+        if player ~= nil and container:IsOpenedBy(player) then
             return player
         end
     end
 
     return nil
-end
-
--- 容器的「逻辑主人」：基地箱子、没带眼骨的切斯特没有 inventoryitem 主人链，
--- 归属只记在 mark store 上。路由（回预留格 / 避开预留格）需要一个 player 去找标记，
--- 有标记的容器就用记下的 owner 当这个 player。
-function ISR.GetMarkOwnerPlayer(container_inst)
-    if container_inst == nil or container_inst.components == nil then
-        return nil
-    end
-
-    local store = container_inst.components.isr_slotmarkstore
-    if store == nil or store.GetOwner == nil then
-        return nil
-    end
-
-    return FindPlayerByUserid(store:GetOwner())
 end
 
 -- 容器路径的解标记：不要求容器有「在线主人」。
@@ -191,15 +253,12 @@ function ISR.ClearContainerSlotMarkOnMismatch(container_inst, slot, item)
         return false
     end
 
-    local owner_userid = store.GetOwner ~= nil and store:GetOwner() or nil
     if not store:ClearMark(slot) then
         return false
     end
 
-    local owner = FindPlayerByUserid(owner_userid)
-    if owner ~= nil then
-        ISR.SyncMarkToClient(owner, container_inst.GUID, slot, nil, true)
-    end
+    -- 标记不记名：谁在看这只容器就把「清掉」推给谁（共享容器广播给所有人）。
+    ISR.SyncMarkChangeToViewers(container_inst, slot, nil, true)
 
     ISR.Log(
         "Container mark cleared by foreign item",
@@ -269,6 +328,8 @@ function ISR.GetNextServerMarkOrder(player)
     return store:NextOrder()
 end
 
+-- 拒绝之后把服务端的真实状态推回去。标记不记名、共享容器的标记人人可见，
+-- 所以这里不再做可见性过滤：被拒的一方看到的应该和别人一样。
 local function SyncAuthoritativeSlotMark(player, container_guid, slot)
     local mark = ISR.GetServerSlotMark(player, container_guid, slot)
     ISR.SyncMarkToClient(player, container_guid, slot, mark ~= nil and mark.prefab or nil)
@@ -528,30 +589,12 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_SET_MARK, function(player, container
         return
     end
 
-    -- 归属：容器上记过的 owner 说了算。第一个在这里落标记的人成为 owner，
-    -- 之后别人打开同一个容器也改不了 —— 否则多人服会互相覆盖。
-    local owner_userid = store.GetOwner ~= nil and store:GetOwner() or nil
-    if owner_userid ~= nil and player.userid ~= nil and owner_userid ~= player.userid then
-        ISR.Log(
-            "Server mark rejected",
-            "reason", "owner",
-            "container", tostring(container_guid),
-            "slot", tostring(slot),
-            "owner", tostring(owner_userid),
-            "player", tostring(player.userid)
-        )
-        SyncAuthoritativeSlotMark(player, container_guid, slot)
-        return
-    end
-
+    -- 标记不记名：容器是独立的东西，谁打开谁都能固定、改、清。
+    -- 没有「这格归谁」的概念，也没有「这箱归谁」的概念（用户 2026-11-04 指定）。
     if prefab == nil then
         store:ClearMark(slot)
-        ISR.SyncMarkToClient(player, container_guid, slot, nil)
+        ISR.SyncMarkChangeToViewers(container_inst, slot, nil)
         return
-    end
-
-    if owner_userid == nil and store.SetOwner ~= nil then
-        store:SetOwner(player.userid)
     end
 
     -- 空格才能标记；但格子里已经放着「正是要预留的那种东西」时也允许，
@@ -560,7 +603,7 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_SET_MARK, function(player, container
     if item_in_slot == nil or ISR.MarkMatchesItem(prefab, item_in_slot) then
         local mark = store:SetMark(slot, prefab, ISR.GetNextServerMarkOrder(player))
         ISR.Log("Server mark set", "container", tostring(container_guid), "slot", tostring(slot), "prefab", tostring(prefab), "order", tostring(mark.order))
-        ISR.SyncMarkToClient(player, container_guid, slot, prefab)
+        ISR.SyncMarkChangeToViewers(container_inst, slot, prefab)
     else
         ISR.Log("Server mark rejected", "reason", "occupied", "container", tostring(container_guid), "slot", tostring(slot), "prefab", tostring(prefab), "item", tostring(item_in_slot.prefab))
         SyncAuthoritativeSlotMark(player, container_guid, slot)

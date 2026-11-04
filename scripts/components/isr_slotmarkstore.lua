@@ -18,29 +18,15 @@ local function DropRegistryIfEmpty(store)
 end
 
 -- 标记只有一种：把某一格固定给某个 prefab。
+-- 标记不记名：容器是独立的东西，不绑定玩家，也不记「谁设的」（用户 2026-11-04 指定）。
 local SlotMarkStore = Class(function(self, inst)
     self.inst = inst
     self.marks = {}
     self.next_order = 0
-    self.owner = nil
 end)
 
 function SlotMarkStore:GetMark(slot)
     return slot ~= nil and self.marks[slot] or nil
-end
-
--- 归属：第一个在这个容器上落标记的玩家 userid。
--- 切斯特没眼骨的时候不跟随任何人，组件语义判不出归属，就靠这个字段记住是谁的。
-function SlotMarkStore:GetOwner()
-    return self.owner
-end
-
-function SlotMarkStore:SetOwner(userid)
-    if userid ~= nil and userid ~= "" then
-        self.owner = tostring(userid)
-    end
-
-    return self.owner
 end
 
 function SlotMarkStore:GetMarks()
@@ -129,7 +115,6 @@ function SlotMarkStore:OnSave()
     {
         marks = records,
         next_order = self.next_order,
-        owner = self.owner,
     }
 end
 
@@ -140,7 +125,6 @@ function SlotMarkStore:OnLoad(data)
     end
 
     self.marks = {}
-    self.owner = data.owner ~= nil and tostring(data.owner) or nil
     self.next_order = ToNumber(data ~= nil and data.next_order) or 0
 
     for _, saved in ipairs(data ~= nil and data.marks or {}) do
@@ -151,6 +135,8 @@ function SlotMarkStore:OnLoad(data)
             prefab = saved.eslot
         end
 
+        -- 0.1.7 及更早的存档带着 owner 字段（容器 owner / 每格 owner），一律忽略：
+        -- 标记不记名，读进来就是公共的。
         if slot ~= nil and slot >= 1 and prefab ~= nil then
             self:SetMark(slot, prefab, saved.order)
         end

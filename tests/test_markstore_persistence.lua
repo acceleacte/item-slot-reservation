@@ -119,3 +119,29 @@ local keep = NewEntity(105, true)
 keep.components.isr_slotmarkstore:SetMark(2, "grass", 1)
 keep.components.isr_slotmarkstore:OnLoad(nil)
 assert_equal(keep.components.isr_slotmarkstore:GetMark(2).prefab, "grass", "OnLoad(nil) keeps in-memory marks")
+
+-- 7. 标记不记名：存档里既不写容器 owner，也不写每格 owner。
+local shared = NewEntity(106, true)
+shared.components.isr_slotmarkstore:SetMark(1, "log", 1)
+shared.components.isr_slotmarkstore:SetMark(2, "twigs", 2)
+local shared_saved = GetPersistData(shared)
+assert_equal(shared_saved.isr_slotmarkstore.owner, nil, "container owner is not written")
+assert_equal(shared_saved.isr_slotmarkstore.marks[1].owner, nil, "per-slot owner is not written")
+local reloaded = NewEntity(107, true)
+SetPersistData(reloaded, shared_saved)
+assert_equal(reloaded.components.isr_slotmarkstore:GetMark(2).prefab, "twigs", "marks survive an anonymous reload")
+
+-- 8. 0.1.7 及更早的存档带 owner 字段：读档时忽略，标记照常可用。
+local old_marks =
+{
+    isr_slotmarkstore =
+    {
+        marks = { { slot = 2, prefab = "grass", order = 1, owner = "KU_legacy" } },
+        next_order = 1,
+        owner = "KU_legacy",
+    },
+}
+local migrated = NewEntity(108, true)
+SetPersistData(migrated, old_marks)
+assert_equal(migrated.components.isr_slotmarkstore:GetMark(2).prefab, "grass", "legacy marks still load")
+assert_equal(migrated.components.isr_slotmarkstore:GetMark(2).owner, nil, "legacy owner is dropped")

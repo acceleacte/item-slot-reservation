@@ -14,6 +14,8 @@ ISR = ISR or {}
 
 local GetValidRecipe = ISR.GetGlobalValue("GetValidRecipe", nil)
 local RoundBiasedUp = ISR.GetGlobalValue("RoundBiasedUp", nil)
+-- mod 沙箱里 pcall 是 nil（AGENTS §4.3），统一从 Runtime 取。
+local protected_call = ISR.Runtime ~= nil and ISR.Runtime.pcall or nil
 
 local function NormalizePrefab(prefab)
     if ISR.NormalizePrefabKey ~= nil then
@@ -534,5 +536,93 @@ AddClientModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_SYNC_SUPPLY, function(payload)
     local player = ISR.GetLocalPlayer()
     if player ~= nil and player.PushEvent ~= nil then
         player:PushEvent("refreshcrafting")
+    end
+end)
+
+-- ---------------------------------------------------------------------------
+-- 配方里的材料行（0.1.8）
+--
+-- 原版 widgets/redux/craftingmenu_ingredients.lua 用
+--     local has, num_found = inventory:Has(type, amount, true)
+-- 取「身上有几个」，再画成 `num_found/amount`，不够就染红（ingredientui.lua）。
+-- 借料的材料在**关着的**箱子里，客户端 inventory 数不到 ⇒ 明明能合成，界面却显示
+-- 「1/2」红字，玩家以为材料不够。这里在原版 SetRecipe 执行期间给 inventory:Has
+-- 打一层临时补丁，把服务端推来的可借数量加进 num_found，显示的就是真正可用的量。
+--
+-- 只包这一个方法，不改原版逻辑；退出时无论成败都还原，别的模组对 Has 的包装不受影响。
+-- ---------------------------------------------------------------------------
+local function SupplyForPrefab(prefab)
+    if prefab == nil or ISR.GetSyncedCraftSupply == nil then
+        return 0
+    end
+
+    local key = ISR.NormalizePrefabKey ~= nil and ISR.NormalizePrefabKey(prefab) or prefab
+    return key ~= nil and ISR.GetSyncedCraftSupply(key) or 0
+end
+
+function ISR.WithSupplyAwareInventory(inventory, fn, ...)
+    if inventory == nil or inventory.Has == nil or fn == nil then
+        return fn ~= nil and fn(...) or nil
+    end
+
+    -- 沙箱里拿不到 pcall 时退化成直接调用：宁可少一层保护，也不能把界面搞崩。
+    if protected_call == nil then
+        return fn(...)
+    end
+
+    -- 嵌套调用（材料图标的子配方弹窗）不重复叠加供应量：外层已经加过了。
+    if inventory._isr_supply_patch then
+        return fn(...)
+    end
+
+    local base_Has = inventory.Has
+    inventory._isr_supply_patch = true
+    inventory.Has = function(inv, prefab, amount, checkall, ...)
+        local has, count = base_Has(inv, prefab, amount, checkall, ...)
+        if has then
+            return has, count
+        end
+
+        local supply = SupplyForPrefab(prefab)
+        if supply <= 0 then
+            return has, count
+        end
+
+        local total = (count or 0) + supply
+        return total >= (amount or 1), total
+    end
+
+    local ok, a, b, c = protected_call(fn, ...)
+    inventory.Has = base_Has
+    inventory._isr_supply_patch = nil
+    if not ok then
+        error(a, 0)
+    end
+
+    return a, b, c
+end
+
+AddClassPostConstruct("widgets/redux/craftingmenu_ingredients", function(self)
+    local old_SetRecipe = self.SetRecipe
+    if old_SetRecipe == nil then
+        return
+    end
+
+    -- 详情面板、固定栏悬停、材料图标里的子配方弹窗都构造这个类，一处覆盖三处。
+    function self:SetRecipe(recipe, ...)
+        if not ISR.IsCraftBorrowEnabled() or ISR._craft_supply == nil then
+            return old_SetRecipe(self, recipe, ...)
+        end
+
+        local owner = self.owner
+        local inventory = owner ~= nil
+            and owner.replica ~= nil
+            and owner.replica.inventory
+            or nil
+        if inventory == nil then
+            return old_SetRecipe(self, recipe, ...)
+        end
+
+        return ISR.WithSupplyAwareInventory(inventory, old_SetRecipe, self, recipe, ...)
     end
 end)

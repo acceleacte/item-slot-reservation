@@ -9,7 +9,7 @@
 | 项 | 值 |
 |---|---|
 | 模组名（显示名） | 物品格预留（`modinfo.name`，工坊标题仍为 Item Slot Reservation；目录名/存档引用是 `workshop-3830575143`，与显示名无关） |
-| 版本 | 0.1.7（`modinfo.lua`） |
+| 版本 | 0.1.8（`modinfo.lua`） |
 | 类型 | 服务器模组，`all_clients_require_mod = true`（2026-10-31 由 false 改来，见 §9.5），`client_only_mod = false` |
 | `api_version` | 10 |
 | 全局表 | `ISR`（同时挂到 `GLOBAL.ISR`） |
@@ -41,7 +41,7 @@ scripts/
   isr_inventoryhooks.lua   348  GiveItem / GetNextAvailableSlot / Shift 转移 hook
   isr_clientpredict.lua    330  客户端落点预测（标记先行判落点 → 背包预测 / 守卫窗口）
   isr_uihooks.lua          368  invslot / inventorybar / containerwidget 的 UI hook
-  components/isr_slotmarkstore.lua  159  标记存储组件（OnSave/OnLoad、add_component_if_missing、owner、注册表登记）
+  components/isr_slotmarkstore.lua  151  标记存储组件（OnSave/OnLoad、add_component_if_missing、注册表登记；不记名）
 tests/                      33 个 lua 测试 + run_lua_tests.py
 images/                     modicon + wood_frame_128_ARGB（木框贴图）
 ```
@@ -190,19 +190,28 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 ### 3.8 可标记容器的范围（组件语义判定，不枚举 prefab）
 
-能标记的只有「属于这名玩家的容器」。判定**只看组件语义**，不维护 prefab 名单 —— 新的容器、别的模组的容器、跟随型容器都不用逐个登记：
+**标记不记名、容器独立（0.1.8 起，硬性，用户 2026-11-04 指定）**：既没有「这只箱归谁」，也没有「这格归谁」。
+`SlotMarkStore` 不存 owner，每条标记也不带 owner，存档不写。谁能固定 / 改 / 清，只看「他能不能打开这只容器」。
+别再加回任何按 userid 的拦截 —— 旧行为是一只箱子被第一个人开过头就对其他人整只锁死，现象是「固定闪一下就消失」。
 
-| 归属 | 判定 |
-|---|---|
-| **容器上记过的 owner**（最先判） | `SlotMarkStore:GetOwner()` 存 userid，随存档走。切斯特没眼骨时不跟随任何人，组件语义判不出来，就靠这个字段。有 owner 时**直接以它为准**，不再看后面的规则 —— 眼骨转手给朋友，标记仍归原主 |
-| 玩家自己 | `inst == player` |
-| 物品类容器（背包、桶、箱子） | `inventoryitem:GetGrandOwner()` 沿 owner 链找终点，终点再按下一行判归属。背包丢地上时链断在 nil，自动排除 |
-| 跟随型容器（切斯特、哈奇、Woby） | `follower:GetLeader() == player` |
-| 骑乘中的载具 | `rideable.rider == player` |
+容器分两类，判定**只看组件语义**，不维护 prefab 名单：
 
-实现在 `isr_storage.lua`：`ISR.IsEntityOwnedByPlayer`（实体归属）、`ISR.IsStorageOwnedByPlayer`（容器归属，owner 字段优先，其次 owner 链，最后实体本身）、`ISR.IsMarkableContainerForPlayer`（RPC 入口）。
+| 类别 | 判定 | 标记可见性 |
+|---|---|---|
+| **共享世界容器** | 有 `container` 组件、没有 `inventoryitem`（拿不起来的箱子、无主切斯特/哈奇）；跟着别人跑的跟随型容器不算 | 所有人可见、可用、可改 |
+| 自己的随身容器 | `inst == player`，或 `inventoryitem:GetGrandOwner()` 沿 owner 链到这名玩家（背包、背包里的桶） | 只有自己可见 |
 
-**第一次落标记的放行条件比归属宽**：`set_slot_mark` 的 RPC 里，除了归属判定，**容器此刻正被这名玩家打开**（`container:IsOpenedBy(player)`）也直接放行（`isr_slotmarks.lua`）。切斯特没眼骨时 `follower:GetLeader()` 是 nil，只有这条能让它可标记。放行之后写入 owner，之后别人再打开也改不了（`reason = "owner"` 拒绝）。
+实现在 `isr_storage.lua`：
+- `ISR.IsEntityOwnedByPlayer`（实体归属：玩家自己 / `follower:GetLeader()` / `rideable.rider`）
+- `ISR.IsStorageOwnedByPlayer`（这名玩家的随身容器）
+- `ISR.IsSharedMarkContainer`（共享世界容器：非玩家、有 container、无 inventoryitem、不跟着别人；`player == nil` 时只问「是不是世界容器」，广播用）
+- `ISR.IsMarkableContainerForPlayer` = 上面两者之一（RPC 入口）
+
+**打开即可标记**：`set_slot_mark` 的 RPC 里，`container:IsOpenedBy(player)` 为真就直接放行（`isr_slotmarks.lua`）。切斯特没眼骨时 `follower:GetLeader()` 是 nil，只有这条能让它可标记。
+
+**推送要按可见性分流**（`ISR.SyncMarkChangeToViewers`）：共享容器的变化广播给所有装了这个模组的玩家（`ISR.BroadcastMarkChange` → `ISR.IsMarkContainerVisibleTo` 过滤），随身容器只推给主人。B 改完箱子，A 开着箱子时界面立刻同步。
+
+**容器不记名就没有「逻辑主人」**：`ISR.GetMarkOwnerPlayer` 返回**当前打开这只容器的玩家**（`container:IsOpenedBy` 扫 `AllPlayers`），没人打开返回 nil —— 此时容器钩子只做解标记、不做路由。
 
 **枚举走注册表，不走「玩家身上有什么」**：`isr_markstores.lua` 的 `ISR._mark_containers`（GUID → 实体）。`SlotMarkStore:SetMark` 与 `OnLoad` 时登记，`ClearMark` 清空后与 `OnRemoveFromEntity` 时注销，`GetMarkContainerInstances` 顺手清理失效实体。`ISR.GetServerMarks` 遍历注册表 + 归属过滤 —— 这样切斯特这类**不在玩家物品栏里**的容器也能算进同步、自动回位与匹配判定。
 
@@ -288,6 +297,7 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 - **replica 组件不走 `EntityScript:AddComponent`**（`entityreplica.lua` 里直接 `cmp(self)`），`AddComponentPostInit("builder_replica")` 永远不触发，必须用 `AddClassPostConstruct("components/builder_replica")` 包构造器。
 - 实体上有真 `builder` 组件（房主/本地服务器）时客户端侧直接放行给服务端 hook，避免双重判定。
 - 客户端缓存的只是「数量」，不含归属/距离：范围、开关容器、`excludefromcrafting` 全在服务端算，客户端不重复实现这套规则。
+- **材料行也要显示借料（0.1.8）**：`craftingmenu_ingredients.lua` 用 `inventory:Has(type, amount, true)` 的 `num_found` 画「有/需」，不够就染红（`ingredientui.lua`）。借料材料在**关着的**箱子里，客户端数不到 ⇒ 明明能合成却显示「1/2」红字，玩家以为材料不够。修法：包 `CraftingMenuIngredients:SetRecipe`，执行期间把 `owner.replica.inventory.Has` 换成「原值 + 同步供应」（`ISR.WithSupplyAwareInventory`），结束后（**含报错路径**）必须还原，否则别的模组对 Has 的包装会被吃掉。详情面板、固定栏悬停、材料图标里的子配方弹窗都构造同一个类，一处覆盖三处。沙箱里 `pcall` 为 nil，用 `ISR.Runtime.pcall`，取不到就不包装、直接调原函数。
 - 设置界面排版（0.1.7 起）：`modinfo` 用 `Section(name, label)` 造分组标题 —— 一个只有单选项且 `description` 为空的条目，`modconfigurationscreen` 里 `is_header` 会隐藏下拉框和底图、只放大标题。悬停说明区只有 585×50（字号 22，约两行），**每段必须 ≤2 行且用 `\n` 手动断行**，单行不超过约 26 个汉字；否则后半句直接看不到。每个选项的 `hover` 会显示在下方的金色值说明行（`value_description`，一行），适合放「这个值的含义」。
 - 语言：`modinfo.lua` 的 `label` / `hover` 由引擎（`GetModConfigurationOptions_Internal`）取回后直接 `SetString`，**不支持按语言取表**，所以设置项文案只能是单一语言（当前固定中文）。`language` 只影响运行时字符串：`ISR.GetLanguageMode()` 优先取配置，缺项/非法值回落 `ISR.IsChineseLocale()`；`ISR.GetText` 与 `ISR.GetPinChordLabel` 都走它。`isr_env` 早于 `isr_config` 加载，取值时必须容忍 `ISR.Config == nil`。
 - 提示音：`craftingmenu_widget` 用「分类内可合成数量比上次多」置 `new_recipe_available`，pinbar 的 `SetCraftingState` 据此播 `dontstarve/HUD/recipe_ready`。借料让这个计数频繁变多，所以在 `isr_uihooks.lua` 里包了 pinbar 的 `SetCraftingState`，只在 `ISR.ShouldMuteRecipeReady()`（借料刚点亮的 0.35s 内）把 `new_recipe_available` 置 false。别去压刷新频率：刷新挂的是原版物品事件，压了会让格子状态过期。
@@ -299,8 +309,8 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 物品进容器有三条真实路径：手动拖入/换位（`PutAllOfActiveItemInSlot` → `GiveItem(item, slot)`）、Shift 转移（`MoveItemFromAllOfSlot` → `GiveItem(item, nil)`）、自动放入（`GiveItem(item, nil)`）。原版在 `slot == nil` 时自己挑格（`GetSpecificSlotForItem`），**落点只有事后 `GetItemSlot(item)` 才知道**。
 
 - 「避开预留格」：`slot == nil` 且容器树里有空的预留格时，走 `GetNextUnmarkedContainerAvailableSlot`（先找同类未满堆、再找未预留空格），落点交给它；没有非预留位就**回落原版**，不要 `return false`（那会让物品直接退回来源）。
-- 「占进预留格就解除预留」：落点确定后调 `ClearContainerSlotMarkOnMismatch`（`isr_slotmarks.lua`）。它按 **mark store 的 owner** 判，不要求容器有在线主人 —— 基地箱子、没带眼骨的切斯特 `ResolvePlayerStorageOwner` 给 nil，早期版本在这里整段 early return，于是这两类容器的预留永远不解除，格子被别的东西占住就成了死格。
-- 容器钩子里的 owner 解析顺序：`ResolvePlayerStorageOwner`（随身容器、跟随者）→ `GetMarkOwnerPlayer`（mark store 里记的 userid → 在线玩家）→ 都没有则只做解标记、不做路由。
+- 「占进预留格就解除预留」：落点确定后调 `ClearContainerSlotMarkOnMismatch`（`isr_slotmarks.lua`）。它直接按格查 mark store，不要求容器有在线主人 —— 基地箱子、没带眼骨的切斯特 `ResolvePlayerStorageOwner` 给 nil，早期版本在这里整段 early return，于是这两类容器的预留永远不解除，格子被别的东西占住就成了死格。清完走 `ISR.SyncMarkChangeToViewers`：共享容器广播，随身容器只推主人。
+- 容器钩子里的 owner 解析顺序：`ResolvePlayerStorageOwner`（随身容器、跟随者）→ `GetMarkOwnerPlayer`（当前打开这只容器的玩家）→ 都没有则只做解标记、不做路由。
 - 读档期间（`storage.isloading` 或 `storage._isr_loading`）一律不解标记，见 `IsStorageLoading`。
 
 
@@ -377,8 +387,8 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 - **发布源是工作区根的 `Item-slot-reservation\` 文件夹**，不在本仓库内。更新版本时改那里的 `modinfo.lua` 与脚本，再由维护者在游戏内 Upload。
 - **不要把发布目录复制进 `mods\item-slot-reservation\`**。工坊订阅版已加载，多一份本地副本会让模组列表出现两个同名条目。上传后 Steam 自动拉取到 `workshop\content\322330\3830575143\`，无需手动同步缓存。
 - 工坊不接受同版本覆盖：每次 Upload 前必须升 `modinfo.lua` 的 `version`。
-- **版本号规则（硬性，用户 2026-11-03 指定）**：未上传工坊期间，所有改动都合并到**同一个待发布号**上，一次只递增一位（工坊上是 `0.1.6` → 待发布 `0.1.7`；中途再改多少次仍是 `0.1.7`），**不跳号**、不因为「修了个 bug」单独占一个新号。判断依据是工坊上实际存在的号，不是本地改了几轮。发布完成后再动代码才允许 +1。
-- 同一个号内的改动全部写进 `CHANGELOG.md` 里**同一节**，不拆成两条（这条规则的由来：0.1.7 未发布时又改了一轮，误开成 0.1.8，已并回 0.1.7）。
+- **版本号规则（硬性，用户 2026-11-03 指定）**：未上传工坊期间，所有改动都合并到**同一个待发布号**上，一次只递增一位（工坊上是 `0.1.7` → 待发布 `0.1.8`；中途再改多少次仍是 `0.1.8`），**不跳号**、不因为「修了个 bug」单独占一个新号。判断依据是工坊上实际存在的号，不是本地改了几轮。发布完成后再动代码才允许 +1。
+- 同一个号内的改动全部写进 `CHANGELOG.md` 里**同一节**，不拆成两条（这条规则的由来：早期未发布时又改了一轮，误开成新号，后来并回待发布号）。
 - 启用方式：各存档 `modoverrides.lua` 勾选工坊 id；不再用 `ForceEnableMod`（会与工坊版本重复加载）
 - **本地测试副本**（按需临时建）：`mods\item-slot-reservation-test\`，从发布目录拷入，脚本与仓库逐字节一致，只有 `modinfo.lua` 不同 —— `name` 带 `[TEST]` 前缀、`version` 带 `-test` 后缀、描述首行写「本地测试版」，好和工坊版区分。只为 `Cluster_4`（存档名「测试」）启用，该存档把 `workshop-3830575143` **整条移除**（不是 `enabled=false`，否则两份 hook 叠加）。测完把目录**移入** `backup\item-slot-reservation-test-<版本>-<日期>\`（不要留在 `mods\` 里），再用 `backup\modoverrides.Cluster_4_{Master,Caves}.bak-testmod-<日期>` 覆盖回原位置。2026-11-01 反复用过（0.1.4 全程），当前仍留在 `mods\` 等工坊上传后清理。
 - 改完代码必须**同时重启客户端和两个 dedicated server 进程**：服务端是独立进程，只重启客户端加载不到服务端改动
@@ -413,7 +423,7 @@ python tests/run_lua_tests.py
 - ~~客户端预测不认预留~~：原版 `inventory_classified:ReceiveItem` 先把物品画进固定格、服务端选定别的落点后回滚，只闪一帧不影响归属。已在 `isr_clientpredict.lua` 里处理（§3.7）；改动预测相关代码时别把这两层拆掉。
 - 沙箱限制：mod 环境里 `setmetatable/pcall/tonumber/next` 等为 nil，走 `GLOBAL`；禁止 `io.open` 写盘（引擎 2025-01 起只读）。
 - **`GLOBAL["名字"]` 写错就把服务器打崩**：服务端开着 `scripts/strict.lua`，读 `_G` 上没声明过的名字会直接抛 `variable 'Xxx' is not declared`。0.1.4 第一次装就是这么崩的（`GLOBAL["IsMasterSimulation"]`——它其实是 `isr_markstores.lua` 里自己定义的局部函数，不是全局）。规则：`ISR.GetGlobalValue` 只传确实是游戏常驻全局的名字；要判服务端就用 `TheWorld.ismastersim`。`tests/test_modmain_load.lua` 里有一个「严格 GLOBAL」替身，加新名字会让测试先炸。
-- **客户端兜底会多发 RPC**：`replica.inventoryitem` 不联网 `owner`，客户端拼不出「切斯特身上的背包」这类归属链，所以 `IsClientMarkableContainerInst` 最后一段是「`GetNumSlots() > 0` 就放行，交给服务端裁决」。代价：对着地上的普通箱子按固定手势也会发请求，服务端 `reason = "not_markable"` 拒绝并回推，表现为闪一下清除音。这是换取「任何没见过的容器都能试」必须付的账，不要为了消掉这个音效把兜底删掉。
+- **客户端兜底会多发 RPC**：`replica.inventoryitem` 不联网 `owner`，客户端拼不出「切斯特身上的背包」这类归属链，所以 `IsClientMarkableContainerInst` 最后一段是「`GetNumSlots() > 0` 就放行，交给服务端裁决」。代价：对着别人的背包、别人的跟随容器按固定手势也会发请求，服务端 `reason = "not_markable"` 拒绝并回推，表现为闪一下清除音。这是换取「任何没见过的容器都能试」必须付的账，不要为了消掉这个音效把兜底删掉。（世界箱子 0.1.8 起是共享容器，会正常放行，不属于这一类。）
 - **作用距离之外的固定格会静默失效**：`container_range` 挡住时物品走原版落点回物品栏，玩家看到的就是「固定了但不进容器」。排查先看日志 `skipped <guid>@<slot>:range`，再问玩家档位选的是哪个。
 - **中键手势在部分鼠标/驱动上不灵**：中键被驱动绑成宏或切 DPI 时，游戏收不到 `MOUSEBUTTON_MIDDLE`。这类玩家改回键盘动作键即可，选项一直留着。
 - **改默认手势不会迁移老存档的设置**：`modsettings` 里存过 `pin_key` 的玩家仍按旧值走（`PIN key = V`），要自己改一次。README 里写明了这一点。

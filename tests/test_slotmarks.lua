@@ -57,6 +57,8 @@ ISR =
         }
     end,
     IsMarkableContainerForPlayer = function() return true end,
+    GetGlobalValue = function(_, fallback) return fallback end,
+    GetContainerInstFromGUID = function() return nil end,
     ToNumber = tonumber,
     Log = function() end,
 }
@@ -119,14 +121,23 @@ ISR.SyncMarkToClient = function() end
 server_handlers.set(player, chester, 2, "twigs")
 assert_equal(chester.components.isr_slotmarkstore:GetMark(2).prefab, "twigs",
     "an opened container accepts a mark even without a resolved owner")
-assert_equal(chester.components.isr_slotmarkstore:GetOwner(), "KU_player",
-    "the first player to mark becomes the owner")
 
--- 另一个玩家打开同一个容器也改不了
+-- 标记不记名：容器是独立的东西，别的玩家同样能固定、同样能改（0.1.8）
 local other = { GUID = 3, userid = "KU_other", components = { inventory = {} } }
+chester_container.IsOpenedBy = function(_, doer) return doer == player or doer == other end
+
 server_handlers.set(other, chester, 3, "log")
-assert_equal(chester.components.isr_slotmarkstore:GetMark(3), nil,
-    "another player cannot mark someone else's container")
+assert_equal(chester.components.isr_slotmarkstore:GetMark(3).prefab, "log",
+    "another player can mark a slot of a shared container")
+
+server_handlers.set(other, chester, 2, "cutgrass")
+assert_equal(chester.components.isr_slotmarkstore:GetMark(2).prefab, "cutgrass",
+    "another player can change a mark; containers carry no owner")
+
+-- 清除同样不记名
+server_handlers.set(other, chester, 2, "")
+assert_equal(chester.components.isr_slotmarkstore:GetMark(2), nil,
+    "another player can clear a mark")
 
 -- 拾取音效：物品直接进容器时物品栏收不到 gotnewitem，得自己按 PICKUPSOUNDS 播一次
 local played = {}

@@ -82,8 +82,40 @@ function ISR.IsEntityOwnedByPlayer(player, inst)
     return false
 end
 
+-- 多人共享的世界容器：箱子、无主的切斯特/哈奇这类「不属于任何人的随身物品」的容器。
+-- 这些容器上的标记对所有人可见、可用（谁拾取都回这个格），只有「改」才受 per-slot owner 限制。
+-- 别人的背包不共享：带 inventoryitem 主人链的一律不算 —— 否则 B 的东西会被路由进 A 的背包。
+-- 跟着别人跑的切斯特/哈奇也不算：那是主人的容器。
+function ISR.IsSharedMarkContainer(player, inst)
+    if inst == nil or inst.components == nil or inst.components.container == nil then
+        return false
+    end
+    -- 玩家自己的物品栏不是共享容器（HasTag 和组件两条都判，测试桩可能没有 HasTag）
+    if inst.HasTag ~= nil and inst:HasTag("player") then
+        return false
+    end
+    if inst.components.inventory ~= nil then
+        return false
+    end
+    if inst.components.inventoryitem ~= nil then
+        return false
+    end
+
+    local follower = inst.components.follower
+    if follower ~= nil then
+        local leader = follower.GetLeader ~= nil and follower:GetLeader() or follower.leader
+        -- player 为 nil 时只问「是不是世界容器」，不判跟随关系（广播用）。
+        if leader ~= nil and player ~= nil and leader ~= player then
+            return false
+        end
+    end
+
+    return true
+end
+
 -- 可标记的容器：玩家自己，以及随身携带的容器（物品栏、装备栏、背包这类
--- 随身容器里的容器、跟随者身上的容器）。地上箱子、别人的容器都不算。
+-- 随身容器里的容器、跟随者身上的容器）。共享的世界容器（基地箱子）谁都能标记，
+-- 单格归属由 RPC 另判。地上别人的背包不算。
 function ISR.IsMarkableContainerForPlayer(player, container_guid)
     if player == nil or container_guid == nil then
         return false
@@ -93,21 +125,15 @@ function ISR.IsMarkableContainerForPlayer(player, container_guid)
 
     local container_inst = ISR.GetContainerInstFromGUID(container_guid)
     return ISR.IsStorageOwnedByPlayer(player, container_inst)
+        or ISR.IsSharedMarkContainer(player, container_inst)
 end
 
--- 容器实体归属：优先看容器上记过的 owner（切斯特没眼骨时不跟随任何人，
--- 组件语义判不出来，只能靠这个字段），其次看 owner 链终点、follower、骑乘。
+-- 容器实体归属：只看「这是不是这名玩家的随身容器」。
+-- 标记不记名（0.1.8），所以这里不看 mark store —— 共享的世界容器由
+-- ISR.IsSharedMarkContainer 另外放行，别人的容器一律不算。
 function ISR.IsStorageOwnedByPlayer(player, inst)
     if player == nil or inst == nil then
         return false
-    end
-
-    local store = inst.components ~= nil and inst.components.isr_slotmarkstore or nil
-    if store ~= nil and store.GetOwner ~= nil then
-        local owner_userid = store:GetOwner()
-        if owner_userid ~= nil then
-            return player.userid ~= nil and owner_userid == player.userid
-        end
     end
 
     local inventoryitem = inst.components ~= nil and inst.components.inventoryitem or nil
