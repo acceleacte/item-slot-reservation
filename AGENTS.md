@@ -400,7 +400,9 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 - **版本号规则（硬性，用户 2026-11-03 指定）**：未上传工坊期间，所有改动都合并到**同一个待发布号**上，一次只递增一位（工坊上是 `0.1.7` → 待发布 `0.1.8`；中途再改多少次仍是 `0.1.8`），**不跳号**、不因为「修了个 bug」单独占一个新号。判断依据是工坊上实际存在的号，不是本地改了几轮。发布完成后再动代码才允许 +1。
 - 同一个号内的改动全部写进 `CHANGELOG.md` 里**同一节**，不拆成两条（这条规则的由来：早期未发布时又改了一轮，误开成新号，后来并回待发布号）。
 - 启用方式：各存档 `modoverrides.lua` 勾选工坊 id；不再用 `ForceEnableMod`（会与工坊版本重复加载）
-- **本地测试副本**（按需临时建）：`mods\item-slot-reservation-test\`，从发布目录拷入，脚本与仓库逐字节一致，只有 `modinfo.lua` 不同 —— `name` 带 `[TEST]` 前缀、`version` 带 `-test` 后缀、描述首行写「本地测试版」，好和工坊版区分。只为 `Cluster_4`（存档名「测试」）启用，该存档把 `workshop-3830575143` **整条移除**（不是 `enabled=false`，否则两份 hook 叠加）。测完把目录**移入** `backup\item-slot-reservation-test-<版本>-<日期>\`（不要留在 `mods\` 里），再用 `backup\modoverrides.Cluster_4_{Master,Caves}.bak-testmod-<日期>` 覆盖回原位置。2026-11-01 反复用过（0.1.4 全程），当前仍留在 `mods\` 等工坊上传后清理。
+- **本地测试副本（常驻）**：`mods\item-slot-reservation-test\`，内容与 `release/` 的运行文件逐字节一致，只有 `modinfo.lua` 三处不同 —— `name` 带 `[TEST]` 后缀、`version` 带 `-test` 后缀、描述首行标「本地测试版」，用来和工坊版区分。
+- **同步必须走脚本**：`python tools/sync_test_mod.py`（默认源 `../release`、默认目标是 Steam 的 `mods\item-slot-reservation-test`；带 `--check-only` 只校验）。**不要手 `cp` 或整目录覆盖 `modinfo.lua`**：那会把三处标识一起抹掉，游戏里就出现两个同名条目，人和存档都分不清（2026-11-04 踩过一次，用户报「测试用和创意工坊下载的一样了」）。脚本是幂等的，重复跑不会叠加后缀。
+- 存档勾选：要测的存档里把 `workshop-3830575143` **整条移除**（不是 `enabled=false`，否则两份 hook 叠加），只留 `item-slot-reservation-test`。
 - 改完代码必须**同时重启客户端和两个 dedicated server 进程**：服务端是独立进程，只重启客户端加载不到服务端改动
 - 日志：`Documents\Klei\DoNotStarveTogether\client_log.txt` / `master_server_log.txt`，标签 `[ItemSlotReservation]`，需在设置里开「调试日志」
 
