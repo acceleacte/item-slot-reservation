@@ -12,6 +12,7 @@ local function read_file(path)
 end
 
 local player = { GUID = 1, _item_slot_reservation_client_marks = {} }
+local sent_rpcs = {}
 
 local runtime_global =
 {
@@ -41,7 +42,9 @@ local env =
     type = type,
     AddModRPCHandler = function() end,
     AddClientModRPCHandler = function() end,
-    SendModRPCToServer = function() end,
+    SendModRPCToServer = function(_, container_inst, slotnum, prefab)
+        sent_rpcs[#sent_rpcs + 1] = { container = container_inst, slot = slotnum, prefab = prefab }
+    end,
     SendModRPCToClient = function() end,
     GetModRPC = function(namespace, name) return { namespace = namespace, name = name } end,
     GetClientModRPC = function(namespace, name) return { namespace = namespace, name = name } end,
@@ -74,18 +77,36 @@ container.GetItemInSlot = function(_, num) return num == 3 and slot_item or nil 
 local slot = { num = 3, container = container, focus = true }
 local function ClientMark() return player._item_slot_reservation_client_marks["1:3"] end
 
--- 固定：把已有物品的格子标记为该物品 -------------------------------------------
-assert_equal(ISR.PinClientSlotMark(slot), true, "pinning an occupied slot succeeds")
-assert_equal(ClientMark(), "grass", "pinned mark uses the slot's item prefab")
+-- 固定：客户端只发请求，不预写本地标记 -----------------------------------------
+-- 预写就是「闪一下」的来源：没权限时先画框再被服务端擦掉。这里锁死这个行为。
+assert_equal(ISR.PinClientSlotMark(slot), true, "pinning an occupied slot sends a request")
+assert_equal(ClientMark(), nil, "the client does not paint before the server confirms")
+assert_equal(#sent_rpcs, 1, "one request is sent")
+assert_equal(sent_rpcs[1].slot, 3, "the request carries the slot number")
+assert_equal(sent_rpcs[1].prefab, "grass", "the request pins the slot's current item")
 
--- 再次固定同一格 -> 取消
+-- 服务端确认后才落库、才画框
+ISR.ApplySyncedClientSlotMark(container.inst, 3, "grass")
+assert_equal(ClientMark(), "grass", "the mark lands after the server confirms")
+
+-- 被拒绝时服务端推 nil（或什么都不推）：屏幕上没有变化，不闪
+ISR.ApplySyncedClientSlotMark(container.inst, 3, nil)
+assert_equal(ClientMark(), nil, "a rejection clears nothing because nothing was painted")
+
+-- 再次固定同一格 -> 取消（客户端此刻已知道这一格有标记）
+ISR.ApplySyncedClientSlotMark(container.inst, 3, "grass")
 assert_equal(ISR.PinClientSlotMark(slot), true, "pinning the same slot again toggles the mark off")
-assert_equal(ClientMark(), nil, "second pin clears the mark")
+assert_equal(ClientMark(), "grass", "toggling off waits for the server too")
+assert_equal(sent_rpcs[#sent_rpcs].prefab, "", "the toggle-off request sends an empty prefab")
+ISR.ApplySyncedClientSlotMark(container.inst, 3, nil)
+assert_equal(ClientMark(), nil, "the mark is gone after the server confirms the clear")
 
 -- 换成树枝后固定 -> 覆盖
 slot_item = { prefab = "twigs" }
 assert_equal(ISR.PinClientSlotMark(slot), true, "pinning after swapping the item succeeds")
-assert_equal(ClientMark(), "twigs", "pin follows the current item in the slot")
+assert_equal(sent_rpcs[#sent_rpcs].prefab, "twigs", "pin follows the current item in the slot")
+ISR.ApplySyncedClientSlotMark(container.inst, 3, "twigs")
+assert_equal(ClientMark(), "twigs", "the new prefab lands after confirmation")
 
 -- 空格不能固定
 local empty_slot = { num = 4, container = container, focus = false }
@@ -94,7 +115,7 @@ assert_equal(ISR.PinClientSlotMark(empty_slot), false, "empty slot cannot be pin
 -- prefab 带后缀也能归一化
 slot_item = { prefab = "Grass.TEX" }
 assert_equal(ISR.PinClientSlotMark(slot), true, "prefab with suffix is pinned")
-assert_equal(ClientMark(), "grass", "pinned key is normalized")
+assert_equal(sent_rpcs[#sent_rpcs].prefab, "grass", "pinned key is normalized")
 
 -- 按键意图：只有按住固定键才接管 -----------------------------------------------
 local pin_pressed = false

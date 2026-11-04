@@ -124,12 +124,14 @@ assert_equal(keep.components.isr_slotmarkstore:GetMark(2).prefab, "grass", "OnLo
 local shared = NewEntity(106, true)
 shared.components.isr_slotmarkstore:SetMark(1, "log", 1)
 shared.components.isr_slotmarkstore:SetMark(2, "twigs", 2)
+shared.components.isr_slotmarkstore:SetOwner("KU_first")
 local shared_saved = GetPersistData(shared)
-assert_equal(shared_saved.isr_slotmarkstore.owner, nil, "container owner is not written")
+assert_equal(shared_saved.isr_slotmarkstore.owner, "KU_first", "the container owner is written")
 assert_equal(shared_saved.isr_slotmarkstore.marks[1].owner, nil, "per-slot owner is not written")
 local reloaded = NewEntity(107, true)
 SetPersistData(reloaded, shared_saved)
-assert_equal(reloaded.components.isr_slotmarkstore:GetMark(2).prefab, "twigs", "marks survive an anonymous reload")
+assert_equal(reloaded.components.isr_slotmarkstore:GetMark(2).prefab, "twigs", "marks survive a reload")
+assert_equal(reloaded.components.isr_slotmarkstore:GetOwner(), "KU_first", "the container owner survives a reload")
 
 -- 8. 0.1.7 及更早的存档带 owner 字段：读档时忽略，标记照常可用。
 local old_marks =

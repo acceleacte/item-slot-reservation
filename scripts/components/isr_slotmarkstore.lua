@@ -18,11 +18,14 @@ local function DropRegistryIfEmpty(store)
 end
 
 -- 标记只有一种：把某一格固定给某个 prefab。
--- 标记不记名：容器是独立的东西，不绑定玩家，也不记「谁设的」（用户 2026-11-04 指定）。
+-- 每条标记不记名（不记谁设的）。容器上另有一个 owner 字段：第一个在这只容器落标记的
+-- 玩家。共享模式（container_sharing = shared，默认）下它不参与任何判定；
+-- 切到独占模式时它决定这只容器归谁。两种模式共用同一份存档，切换不需要迁移。
 local SlotMarkStore = Class(function(self, inst)
     self.inst = inst
     self.marks = {}
     self.next_order = 0
+    self.owner = nil
 end)
 
 function SlotMarkStore:GetMark(slot)
@@ -31,6 +34,19 @@ end
 
 function SlotMarkStore:GetMarks()
     return self.marks
+end
+
+-- 容器 owner：第一个在这只容器落标记的玩家 userid。只在独占模式下参与判定。
+function SlotMarkStore:GetOwner()
+    return self.owner
+end
+
+function SlotMarkStore:SetOwner(userid)
+    if userid ~= nil and userid ~= "" then
+        self.owner = tostring(userid)
+    end
+
+    return self.owner
 end
 
 function SlotMarkStore:SetMark(slot, prefab, order)
@@ -115,6 +131,7 @@ function SlotMarkStore:OnSave()
     {
         marks = records,
         next_order = self.next_order,
+        owner = self.owner,
     }
 end
 
@@ -126,6 +143,8 @@ function SlotMarkStore:OnLoad(data)
 
     self.marks = {}
     self.next_order = ToNumber(data ~= nil and data.next_order) or 0
+    -- 容器 owner：独占模式用它断归属。共享模式下读进来也不参与判定，留着是为了切模式时不丢。
+    self.owner = data.owner ~= nil and tostring(data.owner) or nil
 
     for _, saved in ipairs(data ~= nil and data.marks or {}) do
         local slot = ToNumber(saved.slot)
@@ -135,8 +154,7 @@ function SlotMarkStore:OnLoad(data)
             prefab = saved.eslot
         end
 
-        -- 0.1.7 及更早的存档带着 owner 字段（容器 owner / 每格 owner），一律忽略：
-        -- 标记不记名，读进来就是公共的。
+        -- 老存档里可能还带每格 owner（0.1.8 开发期间的中间格式），一律忽略：归属只按容器记。
         if slot ~= nil and slot >= 1 and prefab ~= nil then
             self:SetMark(slot, prefab, saved.order)
         end

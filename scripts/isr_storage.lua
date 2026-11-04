@@ -83,10 +83,15 @@ function ISR.IsEntityOwnedByPlayer(player, inst)
 end
 
 -- 多人共享的世界容器：箱子、无主的切斯特/哈奇这类「不属于任何人的随身物品」的容器。
--- 这些容器上的标记对所有人可见、可用（谁拾取都回这个格），只有「改」才受 per-slot owner 限制。
+-- 这些容器上的标记对所有人可见、可用（谁拾取都回这个格）。
 -- 别人的背包不共享：带 inventoryitem 主人链的一律不算 —— 否则 B 的东西会被路由进 A 的背包。
 -- 跟着别人跑的切斯特/哈奇也不算：那是主人的容器。
+-- 独占模式（container_sharing = exclusive）下没有任何共享容器，全部按主人算。
 function ISR.IsSharedMarkContainer(player, inst)
+    if not ISR.AreContainerMarksShared() then
+        return false
+    end
+
     if inst == nil or inst.components == nil or inst.components.container == nil then
         return false
     end
@@ -128,12 +133,22 @@ function ISR.IsMarkableContainerForPlayer(player, container_guid)
         or ISR.IsSharedMarkContainer(player, container_inst)
 end
 
--- 容器实体归属：只看「这是不是这名玩家的随身容器」。
--- 标记不记名（0.1.8），所以这里不看 mark store —— 共享的世界容器由
--- ISR.IsSharedMarkContainer 另外放行，别人的容器一律不算。
+-- 容器实体归属：先看「这是不是这名玩家的随身容器」，独占模式再看容器上记的 owner。
+-- 共享模式（默认）下 mark store 的 owner 不参与任何判定 —— 世界容器由
+-- ISR.IsSharedMarkContainer 放行，别人的容器一律不算。
 function ISR.IsStorageOwnedByPlayer(player, inst)
     if player == nil or inst == nil then
         return false
+    end
+
+    -- 独占模式：容器上记的 owner 就是这只容器的主人。世界容器（基地箱子、无主切斯特）
+    -- 没有 inventoryitem 主人链，只能靠这个字段判。
+    if not ISR.AreContainerMarksShared() then
+        local store = inst.components ~= nil and inst.components.isr_slotmarkstore or nil
+        local owner_userid = store ~= nil and store.GetOwner ~= nil and store:GetOwner() or nil
+        if owner_userid ~= nil then
+            return player.userid ~= nil and tostring(owner_userid) == tostring(player.userid)
+        end
     end
 
     local inventoryitem = inst.components ~= nil and inst.components.inventoryitem or nil

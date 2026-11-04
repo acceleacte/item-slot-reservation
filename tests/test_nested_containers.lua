@@ -15,6 +15,7 @@ ISR =
     GetGlobalValue = function(name, fallback)
         return name == "TheWorld" and TheWorld or fallback
     end,
+    AreContainerMarksShared = function() return true end,
     GetEntitiesTable = function() return ents end,
     GetLocalPlayer = function() return nil end,
 }

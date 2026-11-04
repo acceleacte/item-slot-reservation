@@ -56,19 +56,22 @@ assert_equal(restored:ClearMark(2), true, "existing mark clears")
 assert_equal(restored:ClearMark(2), false, "missing mark does not report a clear")
 assert_equal(restored:OnSave(), nil, "cleared store writes no save data")
 
--- 标记不记名：容器是独立的东西，存档里不写 owner，每条标记也不带 owner
+-- 容器 owner 会随存档走（独占模式用它断归属）；每条标记本身仍不带 owner
 local anonymous = SlotMarkStore({ GUID = 13 })
 anonymous:SetMark(1, "twigs", 1)
+anonymous:SetOwner("KU_first")
 local anonymous_data = anonymous:OnSave()
-assert_equal(anonymous_data.owner, nil, "owner is not serialized")
+assert_equal(anonymous_data.owner, "KU_first", "the container owner is serialized")
 assert_equal(anonymous_data.marks[1].owner, nil, "marks carry no owner")
 
 local anonymous_reloaded = SlotMarkStore({ GUID = 14 })
 anonymous_reloaded:OnLoad(anonymous_data)
 assert_equal(anonymous_reloaded:GetMark(1).prefab, "twigs", "marks load back")
+assert_equal(anonymous_reloaded:GetOwner(), "KU_first", "the container owner loads back")
 
--- 老存档里的 owner 字段（0.1.7 及更早）读进来直接忽略
+-- 老存档里的每格 owner（0.1.8 开发期间的中间格式）读进来丢弃，容器 owner 保留
 local legacy_owner = SlotMarkStore({ GUID = 15 })
 legacy_owner:OnLoad({ marks = { { slot = 2, prefab = "log", order = 1, owner = "KU_old" } }, next_order = 1, owner = "KU_old" })
 assert_equal(legacy_owner:GetMark(2).prefab, "log", "legacy marks still load")
-assert_equal(legacy_owner:GetMark(2).owner, nil, "legacy owner is dropped")
+assert_equal(legacy_owner:GetMark(2).owner, nil, "per-slot owner is dropped")
+assert_equal(legacy_owner:GetOwner(), "KU_old", "the legacy container owner is kept for exclusive mode")

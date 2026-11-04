@@ -41,7 +41,7 @@ scripts/
   isr_inventoryhooks.lua   348  GiveItem / GetNextAvailableSlot / Shift 转移 hook
   isr_clientpredict.lua    330  客户端落点预测（标记先行判落点 → 背包预测 / 守卫窗口）
   isr_uihooks.lua          368  invslot / inventorybar / containerwidget 的 UI hook
-  components/isr_slotmarkstore.lua  151  标记存储组件（OnSave/OnLoad、add_component_if_missing、注册表登记；不记名）
+  components/isr_slotmarkstore.lua  164  标记存储组件（OnSave/OnLoad、容器 owner、add_component_if_missing、注册表登记）
 tests/                      33 个 lua 测试 + run_lua_tests.py
 images/                     modicon + wood_frame_128_ARGB（木框贴图）
 ```
@@ -190,28 +190,36 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 ### 3.8 可标记容器的范围（组件语义判定，不枚举 prefab）
 
-**标记不记名、容器独立（0.1.8 起，硬性，用户 2026-11-04 指定）**：既没有「这只箱归谁」，也没有「这格归谁」。
-`SlotMarkStore` 不存 owner，每条标记也不带 owner，存档不写。谁能固定 / 改 / 清，只看「他能不能打开这只容器」。
-别再加回任何按 userid 的拦截 —— 旧行为是一只箱子被第一个人开过头就对其他人整只锁死，现象是「固定闪一下就消失」。
+**世界容器的归属由设置项 `container_sharing` 决定（0.1.8 起，用户 2026-11-04 指定）**：
+
+| 模式 | 语义 | 判定入口 |
+|---|---|---|
+| `shared`（默认） | 容器不记名，谁能打开谁就能固定 / 改 / 清，所有人可见 | `ISR.IsSharedMarkContainer` 放行；RPC 里**没有任何按 userid 的拦截** |
+| `exclusive` | 第一个在这只容器落标记的人独占，别人看不到也动不了 | `SlotMarkStore.owner`；`ISR.IsStorageOwnedByPlayer` 先按它判，RPC 里 `reason = "container_owner"` 拒绝 |
+
+`owner` 字段只按容器记、不按格记，两种模式共用同一份存档：共享模式下它**完全不参与判定**，切到独占直接沿用，来回切不需要迁移、不需要重设标记。每格带 owner 的中间方案已经被用户否掉过，别再加回来。
+
+硬性：**拒绝时必须是「无响应」，不能是「闪一下」**（用户 2026-11-04 明确）。客户端不做乐观写入（见本节末尾），服务端拒绝时不推有效值。
 
 容器分两类，判定**只看组件语义**，不维护 prefab 名单：
 
 | 类别 | 判定 | 标记可见性 |
 |---|---|---|
-| **共享世界容器** | 有 `container` 组件、没有 `inventoryitem`（拿不起来的箱子、无主切斯特/哈奇）；跟着别人跑的跟随型容器不算 | 所有人可见、可用、可改 |
+| **共享世界容器**（仅 `shared` 模式） | 有 `container` 组件、没有 `inventoryitem`（拿不起来的箱子、无主切斯特/哈奇）；跟着别人跑的跟随型容器不算 | 所有人可见、可用、可改 |
 | 自己的随身容器 | `inst == player`，或 `inventoryitem:GetGrandOwner()` 沿 owner 链到这名玩家（背包、背包里的桶） | 只有自己可见 |
 
 实现在 `isr_storage.lua`：
 - `ISR.IsEntityOwnedByPlayer`（实体归属：玩家自己 / `follower:GetLeader()` / `rideable.rider`）
-- `ISR.IsStorageOwnedByPlayer`（这名玩家的随身容器）
-- `ISR.IsSharedMarkContainer`（共享世界容器：非玩家、有 container、无 inventoryitem、不跟着别人；`player == nil` 时只问「是不是世界容器」，广播用）
+- `ISR.AreContainerMarksShared`（读 `container_sharing`，缺配置按共享；定义在 `isr_env.lua`，因为部分测试桩只加载 env + 单模块）
+- `ISR.IsStorageOwnedByPlayer`（随身容器；独占模式下先看容器上记的 `owner`）
+- `ISR.IsSharedMarkContainer`（共享世界容器：**先判 `AreContainerMarksShared`**，独占模式恒 false；其余条件为非玩家、有 container、无 inventoryitem、不跟着别人；`player == nil` 时只问「是不是世界容器」，广播用）
 - `ISR.IsMarkableContainerForPlayer` = 上面两者之一（RPC 入口）
 
 **打开即可标记**：`set_slot_mark` 的 RPC 里，`container:IsOpenedBy(player)` 为真就直接放行（`isr_slotmarks.lua`）。切斯特没眼骨时 `follower:GetLeader()` 是 nil，只有这条能让它可标记。
 
 **推送要按可见性分流**（`ISR.SyncMarkChangeToViewers`）：共享容器的变化广播给所有装了这个模组的玩家（`ISR.BroadcastMarkChange` → `ISR.IsMarkContainerVisibleTo` 过滤），随身容器只推给主人。B 改完箱子，A 开着箱子时界面立刻同步。
 
-**容器不记名就没有「逻辑主人」**：`ISR.GetMarkOwnerPlayer` 返回**当前打开这只容器的玩家**（`container:IsOpenedBy` 扫 `AllPlayers`），没人打开返回 nil —— 此时容器钩子只做解标记、不做路由。
+**路由主人按模式取**：`ISR.GetMarkOwnerPlayer` —— 独占模式返回容器上记的 `owner` 对应的在线玩家（`FindPlayerByUserid`）；共享模式返回**当前打开这只容器的玩家**（`container:IsOpenedBy` 扫 `AllPlayers`），没人打开返回 nil，此时容器钩子只做解标记、不做路由。
 
 **枚举走注册表，不走「玩家身上有什么」**：`isr_markstores.lua` 的 `ISR._mark_containers`（GUID → 实体）。`SlotMarkStore:SetMark` 与 `OnLoad` 时登记，`ClearMark` 清空后与 `OnRemoveFromEntity` 时注销，`GetMarkContainerInstances` 顺手清理失效实体。`ISR.GetServerMarks` 遍历注册表 + 归属过滤 —— 这样切斯特这类**不在玩家物品栏里**的容器也能算进同步、自动回位与匹配判定。
 
@@ -219,7 +227,9 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 1. `replica.follower:GetLeader() == player`（跟随容器）；
 2. 物品栏/装备栏一层 + `replica.container:GetItemInSlot` 往下扫一层（容器树，靠 classified，只有打开过的容器有数据）；
-3. **兜底**：`replica.container:GetNumSlots() > 0` 就放行，交给服务端裁决 —— `inventoryitem` 的 replica 不带 owner，客户端拼不出完整归属链（切斯特身上的背包就是这种情况），服务端拒绝时会 `SyncAuthoritativeSlotMark` 回推真实状态。
+3. **兜底**：`replica.container:GetNumSlots() > 0` 就放行，交给服务端裁决 —— `inventoryitem` 的 replica 不带 owner，客户端拼不出完整归属链（切斯特身上的背包就是这种情况）。客户端不知道 `container_sharing` 也不该知道：**能不能用由服务端说了算**。
+
+**客户端不做乐观写入（0.1.8，硬性）**：`ISR.SetClientSlotMark` 只发 RPC，**不写**本地 `_item_slot_reservation_client_marks`。本地表只由 `ApplySyncedClientSlotMark`（服务端 `sync_mark`）和快照写入，画框与「固定成功」音效也在那里播。原因：乐观写入会让被拒绝的操作先画框再擦掉 —— 就是「闪一下」。曾经在 `PinClientSlotMark` 里即时 `ApplyRuntimeIconToSlot` + `click_object`，已全部移除；`_client_requested_clear_key` 那套抑制重复清除音的机制也随之删掉（现在清除音只在确认后响一次）。
 
 深度上限 `ISR.PERSONAL_STORAGE_DEPTH = 3`：玩家(1) → 物品栏容器(2) → 容器里的容器(3)。`GetPersonalStorageInstances`（备份路径用）按这个上限递归，带 `seen` 防环。
 
@@ -310,7 +320,7 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 - 「避开预留格」：`slot == nil` 且容器树里有空的预留格时，走 `GetNextUnmarkedContainerAvailableSlot`（先找同类未满堆、再找未预留空格），落点交给它；没有非预留位就**回落原版**，不要 `return false`（那会让物品直接退回来源）。
 - 「占进预留格就解除预留」：落点确定后调 `ClearContainerSlotMarkOnMismatch`（`isr_slotmarks.lua`）。它直接按格查 mark store，不要求容器有在线主人 —— 基地箱子、没带眼骨的切斯特 `ResolvePlayerStorageOwner` 给 nil，早期版本在这里整段 early return，于是这两类容器的预留永远不解除，格子被别的东西占住就成了死格。清完走 `ISR.SyncMarkChangeToViewers`：共享容器广播，随身容器只推主人。
-- 容器钩子里的 owner 解析顺序：`ResolvePlayerStorageOwner`（随身容器、跟随者）→ `GetMarkOwnerPlayer`（当前打开这只容器的玩家）→ 都没有则只做解标记、不做路由。
+- 容器钩子里的 owner 解析顺序：`ResolvePlayerStorageOwner`（随身容器、跟随者）→ `GetMarkOwnerPlayer`（独占模式取容器 owner，共享模式取当前打开这只容器的玩家）→ 都没有则只做解标记、不做路由。
 - 读档期间（`storage.isloading` 或 `storage._isr_loading`）一律不解标记，见 `IsStorageLoading`。
 
 
@@ -423,7 +433,7 @@ python tests/run_lua_tests.py
 - ~~客户端预测不认预留~~：原版 `inventory_classified:ReceiveItem` 先把物品画进固定格、服务端选定别的落点后回滚，只闪一帧不影响归属。已在 `isr_clientpredict.lua` 里处理（§3.7）；改动预测相关代码时别把这两层拆掉。
 - 沙箱限制：mod 环境里 `setmetatable/pcall/tonumber/next` 等为 nil，走 `GLOBAL`；禁止 `io.open` 写盘（引擎 2025-01 起只读）。
 - **`GLOBAL["名字"]` 写错就把服务器打崩**：服务端开着 `scripts/strict.lua`，读 `_G` 上没声明过的名字会直接抛 `variable 'Xxx' is not declared`。0.1.4 第一次装就是这么崩的（`GLOBAL["IsMasterSimulation"]`——它其实是 `isr_markstores.lua` 里自己定义的局部函数，不是全局）。规则：`ISR.GetGlobalValue` 只传确实是游戏常驻全局的名字；要判服务端就用 `TheWorld.ismastersim`。`tests/test_modmain_load.lua` 里有一个「严格 GLOBAL」替身，加新名字会让测试先炸。
-- **客户端兜底会多发 RPC**：`replica.inventoryitem` 不联网 `owner`，客户端拼不出「切斯特身上的背包」这类归属链，所以 `IsClientMarkableContainerInst` 最后一段是「`GetNumSlots() > 0` 就放行，交给服务端裁决」。代价：对着别人的背包、别人的跟随容器按固定手势也会发请求，服务端 `reason = "not_markable"` 拒绝并回推，表现为闪一下清除音。这是换取「任何没见过的容器都能试」必须付的账，不要为了消掉这个音效把兜底删掉。（世界箱子 0.1.8 起是共享容器，会正常放行，不属于这一类。）
+- **客户端兜底会多发 RPC**：`replica.inventoryitem` 不联网 `owner`，客户端拼不出「切斯特身上的背包」这类归属链，所以 `IsClientMarkableContainerInst` 最后一段是「`GetNumSlots() > 0` 就放行，交给服务端裁决」。代价：对着别人的背包、别人的跟随容器按固定手势也会发一次没人听的请求 —— 0.1.8 起客户端不预写标记，被拒时**屏幕上没有任何反应**，正是想要的效果。不要为了省这一次 RPC 把兜底删掉（删了就试不了没见过的容器）。（世界箱子在共享模式下会正常放行；独占模式且不属于你时走无响应。）
 - **作用距离之外的固定格会静默失效**：`container_range` 挡住时物品走原版落点回物品栏，玩家看到的就是「固定了但不进容器」。排查先看日志 `skipped <guid>@<slot>:range`，再问玩家档位选的是哪个。
 - **中键手势在部分鼠标/驱动上不灵**：中键被驱动绑成宏或切 DPI 时，游戏收不到 `MOUSEBUTTON_MIDDLE`。这类玩家改回键盘动作键即可，选项一直留着。
 - **改默认手势不会迁移老存档的设置**：`modsettings` 里存过 `pin_key` 的玩家仍按旧值走（`PIN key = V`），要自己改一次。README 里写明了这一点。

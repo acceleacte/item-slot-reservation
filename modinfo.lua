@@ -130,6 +130,17 @@ configuration_options =
     },
     Section("section_container", "测试内容"),
     {
+        name = "container_sharing",
+        label = "世界容器固定格",
+        hover = "箱子、切斯特的固定格由谁使用\n共享：看到就能改 / 独占：只有标记者",
+        options =
+        {
+            { description = "共享(推荐)", data = "shared", hover = "谁能打开谁就能固定、改、清" },
+            { description = "独占", data = "exclusive", hover = "只有第一个标记的人能用" },
+        },
+        default = "shared",
+    },
+    {
         name = "pickup_to_container",
         label = "拾取后放回容器",
         hover = "开启：拾取物直接进箱子等世界容器的固定格\n关闭：只有物品栏和随身容器的固定格接收",

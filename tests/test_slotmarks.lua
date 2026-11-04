@@ -18,6 +18,7 @@ Class = function(constructor)
 end
 
 local server_handlers = {}
+local container_marks_shared = true
 AddModRPCHandler = function(_, name, handler) server_handlers[name] = handler end
 AddClientModRPCHandler = function() end
 
@@ -57,6 +58,7 @@ ISR =
         }
     end,
     IsMarkableContainerForPlayer = function() return true end,
+    AreContainerMarksShared = function() return container_marks_shared end,
     GetGlobalValue = function(_, fallback) return fallback end,
     GetContainerInstFromGUID = function() return nil end,
     ToNumber = tonumber,
@@ -138,6 +140,40 @@ assert_equal(chester.components.isr_slotmarkstore:GetMark(2).prefab, "cutgrass",
 server_handlers.set(other, chester, 2, "")
 assert_equal(chester.components.isr_slotmarkstore:GetMark(2), nil,
     "another player can clear a mark")
+
+-- 独占模式（container_sharing = exclusive）：第一个落标记的人独占这只容器 -------------
+container_marks_shared = false
+chester.components.isr_slotmarkstore:SetOwner("KU_player")
+
+server_handlers.set(other, chester, 5, "log")
+assert_equal(chester.components.isr_slotmarkstore:GetMark(5), nil,
+    "exclusive mode rejects another player's mark")
+
+server_handlers.set(other, chester, 2, "")
+assert_equal(chester.components.isr_slotmarkstore:GetOwner(), "KU_player",
+    "exclusive mode keeps the owner when someone else tries to clear")
+
+server_handlers.set(player, chester, 5, "log")
+assert_equal(chester.components.isr_slotmarkstore:GetMark(5).prefab, "log",
+    "exclusive mode still lets the owner mark")
+
+-- 没有 owner 的容器：第一个落标记的人成为 owner
+local fresh = { GUID = 60, components = {} }
+fresh.components.isr_slotmarkstore = SlotMarkStore(fresh)
+ISR.GetStorageFromEntity = function(inst) return inst == fresh and chester_container or nil end
+ISR.GetSlotMarkStoreForGUID = function(_, guid)
+    if guid == fresh.GUID then
+        return fresh.components.isr_slotmarkstore
+    end
+    return guid == chester.GUID and chester.components.isr_slotmarkstore or nil
+end
+server_handlers.set(other, fresh, 1, "twigs")
+assert_equal(fresh.components.isr_slotmarkstore:GetOwner(), "KU_other",
+    "the first player to mark becomes the owner in exclusive mode")
+assert_equal(fresh.components.isr_slotmarkstore:GetMark(1).prefab, "twigs",
+    "the first mark is accepted")
+
+container_marks_shared = true
 
 -- 拾取音效：物品直接进容器时物品栏收不到 gotnewitem，得自己按 PICKUPSOUNDS 播一次
 local played = {}

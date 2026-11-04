@@ -21,6 +21,10 @@ ISR.Config =
     craft_from_container = GetModConfigData("craft_from_container") == true,
     -- 合成提示音的处置：original（原版）/ borrow（只在借料点亮配方时静音）/ silent（全部静音）
     craft_ping = ISR.NormalizeConfigValue(GetModConfigData("craft_ping"), ISR.ValidCraftPingOptions, "borrow"),
+    -- 世界容器（基地箱子、无主切斯特）的固定格由谁使用：
+    -- shared（默认）不记名，谁能打开就能固定 / 改 / 清，所有人看得见；
+    -- exclusive 第一个在这只容器落标记的人独占，别人看不到也动不了。
+    container_sharing = ISR.NormalizeConfigValue(GetModConfigData("container_sharing"), ISR.ValidContainerSharingOptions, "shared"),
 }
 
 if ISR.Config.icon_opacity < 0 then
@@ -46,5 +50,6 @@ ISR.Log(
     "pickup_to_container", tostring(ISR.Config.pickup_to_container),
     "container_range", tostring(ISR.Config.container_range),
     "craft_from_container", tostring(ISR.Config.craft_from_container),
-    "craft_ping", tostring(ISR.Config.craft_ping)
+    "craft_ping", tostring(ISR.Config.craft_ping),
+    "container_sharing", tostring(ISR.Config.container_sharing)
 )

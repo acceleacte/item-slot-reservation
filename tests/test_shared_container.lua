@@ -157,4 +157,34 @@ assert_equal(chest.components.isr_slotmarkstore:OnSave().owner, nil, "the contai
 assert_equal(ISR.IsMarkContainerVisibleTo(bob, chest.GUID), true, "bob is a viewer of the shared chest")
 assert_equal(ISR.IsMarkContainerVisibleTo(bob, backpack.GUID), false, "bob is not a viewer of alice's backpack")
 
+-- 独占模式（container_sharing = exclusive，0.1.8 新增开关）-------------------------
+-- 共享是默认值；关掉共享之后，世界容器退回「第一个落标记的人独占」。
+ISR.Config = { container_sharing = "exclusive" }
+chest.components.isr_slotmarkstore:SetOwner("KU_alice")
+
+assert_equal(ISR.IsSharedMarkContainer(bob, chest), false, "exclusive mode leaves no shared container")
+assert_equal(ISR.IsStorageOwnedByPlayer(alice, chest), true, "the recorded owner owns the chest")
+assert_equal(ISR.IsStorageOwnedByPlayer(bob, chest), false, "another player does not own it")
+
+assert_equal(ISR.GetServerMarks(bob)[ISR.GetSlotKey(chest.GUID, 2)], nil,
+    "bob does not see the chest marks in exclusive mode")
+assert_equal(ISR.GetServerMarks(alice)[ISR.GetSlotKey(chest.GUID, 2)].prefab, "log",
+    "alice still sees the marks she pinned")
+assert_equal(#ISR.GetSortedServerMarksForPrefab(bob, "log"), 0,
+    "bob does not route pickups into a chest he does not own")
+assert_equal(ISR.IsMarkContainerVisibleTo(bob, chest.GUID), false,
+    "bob gets no pushes for that chest")
+assert_equal(ISR.IsMarkContainerVisibleTo(alice, chest.GUID), true,
+    "the owner still gets pushes")
+
+-- 路由主人：独占模式下按记下的 owner 找人，不看谁正打开着箱子
+runtime_global.AllPlayers = { alice, bob }
+assert_equal(ISR.GetMarkOwnerPlayer(chest), alice, "the routing owner is the recorded owner")
+
+-- 切回共享：同一份数据立刻恢复成「谁都能用」，不需要迁移
+ISR.Config = nil
+assert_equal(ISR.IsSharedMarkContainer(bob, chest), true, "shared is the default again")
+assert_equal(ISR.GetServerMarks(bob)[ISR.GetSlotKey(chest.GUID, 2)].prefab, "log",
+    "bob sees the chest marks again")
+
 print("test_shared_container ok")

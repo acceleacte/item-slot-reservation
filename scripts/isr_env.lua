@@ -177,6 +177,24 @@ ISR.ValidContainerRangeOptions =
     far = true,
 }
 
+-- 世界容器（基地箱子、无主切斯特）的标记归属：
+--   shared    （默认）不记名，谁能打开这只容器谁就能固定 / 改 / 清，所有人都看得见；
+--   exclusive 第一个在这只容器落标记的人独占，别人看不到也动不了。
+ISR.ValidContainerSharingOptions =
+{
+    shared = true,
+    exclusive = true,
+}
+
+-- 世界容器的标记是否共享（配置项 container_sharing，默认 shared）。
+-- shared：容器不记名，谁能打开谁就能固定 / 改 / 清，所有人都看得见；
+-- exclusive：退回「第一个在这只容器落标记的人独占」，别人看不到也动不了。
+-- 配置缺失（测试桩、老存档、还没读 modinfo）时按共享处理。
+-- 放在 env 里是因为 isr_slotmarks 也会用到，而部分测试桩只加载 env + 单个模块。
+function ISR.AreContainerMarksShared()
+    return ISR.Config == nil or ISR.Config.container_sharing ~= "exclusive"
+end
+
 -- 合成提示音（dontstarve/HUD/recipe_ready）的处理方式：
 --   original 保持原版；borrow 只在借料点亮配方时静音（默认）；silent 全部关掉。
 ISR.ValidCraftPingOptions =
