@@ -9,7 +9,7 @@
 | 项 | 值 |
 |---|---|
 | 模组名（显示名） | 物品格预留（`modinfo.name`，工坊标题仍为 Item Slot Reservation；目录名/存档引用是 `workshop-3830575143`，与显示名无关） |
-| 版本 | 0.1.8（`modinfo.lua`） |
+| 版本 | 0.1.81（`modinfo.lua`） |
 | 类型 | 服务器模组，`all_clients_require_mod = true`（2026-10-31 由 false 改来，见 §9.5），`client_only_mod = false` |
 | `api_version` | 10 |
 | 全局表 | `ISR`（同时挂到 `GLOBAL.ISR`） |
