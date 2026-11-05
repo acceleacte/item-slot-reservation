@@ -25,7 +25,7 @@ from pathlib import Path
 TEST_SUFFIX = "[TEST]"
 TEST_VERSION_SUFFIX = "-test"
 TEST_DESC_HEADER = "【本地测试版】非创意工坊发布版本，仅用于本地联机测试"
-COPY_FILES = ("modmain.lua", "modicon.png")
+COPY_FILES = ("modmain.lua",)
 COPY_DIRS = ("images", "scripts")
 
 DEFAULT_SOURCE = Path(__file__).resolve().parent.parent.parent / "release"

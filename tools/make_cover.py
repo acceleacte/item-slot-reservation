@@ -7,12 +7,15 @@
   英文「ITEM SLOT RESERVATION」
 主模组没有「[客户端]」前缀与 LITE 徽标，所以两行各自居中、左右边界等宽。
 
-底图取 `main/cover/isr-base-128.png`（无字原封面），不取 `release/modicon.png`：
+底图取 `main/cover/isr-base-128.png`（无字原封面），不取生成结果：
 后者会被本脚本改写成带字的 512 版，拿它当底图会叠字。
 
 输出：
-  release/modicon.png          512x512，工坊缩略图源图（Steam 容器 512，不 upscale）
-  main/cover/isr-cover-512.png 512x512 母版留档
+  ../workshop-assets/modicon-512.png  512x512，工坊缩略图源图（Steam 容器 512，不 upscale）
+  main/cover/isr-cover-512.png        512x512 母版留档
+
+`release/` 只放运行必需项，不放封面图：上传时在 ModUploader 里手选
+`workshop-assets/modicon-512.png` 作缩略图。
 
 游戏内 Mods 图标仍用 `release/images/modicon.tex`（128x128），本脚本不改它：
 主模组发布已久，tex 是 DXT5 压缩版，换图需要重新编码，风险不值当。
@@ -27,7 +30,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COVER_DIR = os.path.join(ROOT, "cover")
-RELEASE = os.path.join(os.path.dirname(ROOT), "release")
+ASSETS = os.path.join(os.path.dirname(os.path.dirname(ROOT)), "workshop-assets")
 SOURCE = os.path.join(COVER_DIR, "isr-base-128.png")
 
 FONT_CN = r"C:\Windows\Fonts\方正粗黑宋简体.ttf"
@@ -133,14 +136,14 @@ def main():
     if not os.path.isfile(SOURCE):
         print("FAIL 找不到底图 %s" % SOURCE)
         return 1
-    if not os.path.isdir(RELEASE):
-        print("FAIL 找不到发布目录 %s" % RELEASE)
+    if not os.path.isdir(ASSETS):
+        print("FAIL 找不到美术资源目录 %s" % ASSETS)
         return 1
 
     os.makedirs(COVER_DIR, exist_ok=True)
 
     cover = build(2048).resize((512, 512), Image.LANCZOS)
-    shop_path = os.path.join(RELEASE, "modicon.png")
+    shop_path = os.path.join(ASSETS, "modicon-512.png")
     cover.save(shop_path)
     master_path = os.path.join(COVER_DIR, "isr-cover-512.png")
     cover.save(master_path)

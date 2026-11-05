@@ -9,7 +9,7 @@
 | 项 | 值 |
 |---|---|
 | 模组名（显示名） | 物品格预留（`modinfo.name`，工坊标题仍为 Item Slot Reservation；目录名/存档引用是 `workshop-3830575143`，与显示名无关） |
-| 版本 | 0.1.81（`modinfo.lua`） |
+| 版本 | 0.1.82（`modinfo.lua`） |
 | 类型 | 服务器模组，`all_clients_require_mod = true`（2026-10-31 由 false 改来，见 §9.5），`client_only_mod = false` |
 | `api_version` | 10 |
 | 全局表 | `ISR`（同时挂到 `GLOBAL.ISR`） |
@@ -46,7 +46,7 @@ tests/                      33 个 lua 测试 + run_lua_tests.py
 images/                     modicon + wood_frame_128_ARGB（木框贴图）
 cover/                      isr-base-128.png（无字原封面，所有封面脚本的底图）
                             isr-cover-512.png（512x512 带字母版）
-tools/make_cover.py         生成 512 工坊缩略图，输出到 ../release/modicon.png
+tools/make_cover.py         生成 512 工坊缩略图，输出到 ../workshop-assets/modicon-512.png
 ```
 
 ---
@@ -544,10 +544,12 @@ Steam 的工坊缩略图容器固定 `512x512`，**只做 letterbox、不做 ups
 cd main && python tools/make_cover.py
 ```
 
-- 底图 `cover/isr-base-128.png`（**无字**原封面）。不要用 `../release/modicon.png` 当底图 —
+- 底图 `cover/isr-base-128.png`（**无字**原封面）。不要用 `../workshop-assets/modicon-512.png` 当底图 —
   它由本脚本写成带字的 512 版，再叠一次会出双份文字。
 - 版式：上半暗区两行字「物品格预留」/「ITEM SLOT RESERVATION」，左右边界等宽，
   与 Lite 封面同一套（`lite/tools/make_cover.py`）。游戏内物品栏区域不改动。
-- 输出 `../release/modicon.png`(512) 与 `cover/isr-cover-512.png`(512 母版)。
+- 输出 `../workshop-assets/modicon-512.png`(512) 与 `cover/isr-cover-512.png`(512 母版)。
+- **`release/` 不放封面图**：只装运行必需项（`modinfo.lua` / `modmain.lua` / `scripts/` / `images/`）。
+  上传时在 ModUploader 里手选 `workshop-assets/modicon-512.png` 作缩略图。
 - `images/modicon.tex` 仍是 128 的 DXT5，本脚本不动它：游戏内 Mods 图标与工坊缩略图是两份，
   改 tex 要重新编码，风险不值当。

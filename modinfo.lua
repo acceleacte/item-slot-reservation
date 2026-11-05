@@ -19,7 +19,7 @@ description = [[
 并且可以在模组设置中关闭测试版内容以(尝试)解决问题
 ]]
 author = "acceleacte"
-version = "0.1.81"
+version = "0.1.82"
 api_version = 10
 dst_compatible = true
 dont_starve_compatible = false

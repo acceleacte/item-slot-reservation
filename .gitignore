@@ -2,3 +2,4 @@ dist/
 *.zip
 .workbuddy/
 .lua-test-runtime/
+__pycache__/
