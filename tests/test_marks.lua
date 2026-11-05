@@ -111,7 +111,7 @@ assert_equal(#sorted, 1, "prefab lookup normalizes the query")
 assert_equal(sorted[1].slot, 4, "prefab lookup returns the reserved slot")
 assert_equal(#ISR.GetSortedServerMarksForPrefab(player, "log"), 0, "unreserved prefab has no slots")
 
--- 标记不记名：容器上的每一格对能用这只容器的人都可见、可用（0.1.8）。
+-- 标记不记名：容器上的每一格对能用这只容器的人都可见、可用（0.1.8）
 player.userid = "KU_me"
 player.components.isr_slotmarkstore:SetMark(5, "log", 20)
 local shared_marks = ISR.GetServerMarks(player)
@@ -131,7 +131,7 @@ local chest = { GUID = 900, components = {} }
 chest.components.isr_slotmarkstore = MarkStore(chest)
 chest.components.isr_slotmarkstore:SetMark(2, "log", 9)
 
--- 箱子不是谁的随身物品 ⇒ 共享容器；标记变化广播给所有装了这个模组的玩家。
+-- 箱子不是谁的随身物品 ⇒ 共享容器；标记变化广播给所有装了这个模组的玩家
 ISR.IsSharedMarkContainer = function(_, inst) return inst == chest end
 ISR.IsMarkContainerVisibleTo = function() return true end
 ISR.IsClientCapable = function() return true end

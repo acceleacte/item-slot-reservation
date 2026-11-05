@@ -14,8 +14,8 @@ end
 
 -- 服务端跑着 scripts/strict.lua：读 _G 上没声明过的名字会抛 "variable is not declared"，
 -- GLOBAL["Xxx"] 写错一个名字就能把整台服务器打崩（0.1.4 第一次装的时候就是
--- GLOBAL["IsMasterSimulation"] —— 它其实是 isr_markstores 里的局部函数，不是全局）。
--- 这里照着 strict 的行为造一个 GLOBAL，把「模组允许碰的全局名」钉死在这张表里。
+-- GLOBAL["IsMasterSimulation"] —— 它其实是 isr_markstores 里的局部函数，不是全局）
+-- 这里照着 strict 的行为造一个 GLOBAL，把「模组允许碰的全局名」钉死在这张表里
 local declared = {}
 local global_proxy = {}
 setmetatable(global_proxy,

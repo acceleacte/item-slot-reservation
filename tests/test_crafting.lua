@@ -505,7 +505,7 @@ assert_false(ISR.ShouldMuteRecipeReady(), "original mode never mutes")
 ISR.Config.craft_ping = "borrow"
 
 -- 材料行显示（0.1.8）：原版用 inventory:Has 的 num_found 画「有/需」，
--- 借料的材料要算进去，否则界面显示「1/2」红字，玩家以为做不了。
+-- 借料的材料要算进去，否则界面显示「1/2」红字，玩家以为做不了
 ISR._craft_supply = { log = 3 }
 local base_Has = function(_, prefab, amount)
     if prefab == "log" then

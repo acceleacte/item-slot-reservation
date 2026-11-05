@@ -62,8 +62,8 @@ local function GetSlotItemPrefab(slot)
     return item ~= nil and item.prefab or nil
 end
 
--- 只在按住固定键悬停时接管 tooltip，其余时刻原样还给游戏。
--- 文案只要动作，不带物品名和括号：格子本身已经显示物品，重复没有信息量。
+-- 只在按住固定键悬停时接管 tooltip，其余时刻原样还给游戏
+-- 文案只要动作，不带物品名和括号：格子本身已经显示物品，重复没有信息量
 local function BuildSlotTooltip(slot)
     if slot == nil or not slot.focus then
         return nil
@@ -76,7 +76,7 @@ local function BuildSlotTooltip(slot)
     local mark = ISR.GetClientSlotMark(slot)
     local lines = {}
 
-    -- 手势文案随配置变：键盘模式是「V + 左键」，鼠标模式是「Shift + 中键」。
+    -- 手势文案随配置变：键盘模式是「V + 左键」，鼠标模式是「Shift + 中键」
     local pin_label = ISR.GetPinChordLabel(ISR.SLOT_INTENT_PIN) or ""
     local clear_label = ISR.GetPinChordLabel(ISR.SLOT_INTENT_CLEAR) or ""
 
@@ -155,7 +155,7 @@ AddClassPostConstruct("widgets/invslot", function(self)
         -- 固定：点已有物品的格子，把该格固定给这种物品
         if intent == ISR.SLOT_INTENT_PIN then
             -- 切换模式（Shift+中键）下，已固定的格子直接清除，不要求格中仍是同一种物品：
-            -- 中键只有一个动作，玩家没法再分左右键。
+            -- 中键只有一个动作，玩家没法再分左右键
             if ISR.IsTogglePinKey() and ISR.GetClientSlotMark(slot) ~= nil then
                 ISR.Log("InvSlot toggle clear", "slot", tostring(slot.num))
                 return ISR.ClearClientSlotMark(slot)
@@ -211,7 +211,7 @@ AddClassPostConstruct("widgets/invslot", function(self)
     end
 
     -- 拾取/放下物品走的是 OnControl(CONTROL_ACCEPT / CONTROL_PRIMARY)，
-    -- 只拦 OnMouseButton 挡不住，必须同时拦控制事件。
+    -- 只拦 OnMouseButton 挡不住，必须同时拦控制事件
     local old_OnControl = self.OnControl
     function self:OnControl(control, down)
         if HandleSlotIntent(self, ISR.GetSlotMouseIntent(control), down) then
@@ -251,8 +251,8 @@ AddClassPostConstruct("widgets/invslot", function(self)
     end
 
     -- 格子里有物品时，物品图（self.tile）是 self 的子 widget：Widget:GetTooltip
-    -- 先遍历子 widget 再取 self.tooltip，物品自己的提示会盖掉我们写的串。
-    -- 按住固定键期间直接接管返回值，让提示稳定显示在按住的全过程。
+    -- 先遍历子 widget 再取 self.tooltip，物品自己的提示会盖掉我们写的串
+    -- 按住固定键期间直接接管返回值，让提示稳定显示在按住的全过程
     local old_GetTooltip = self.GetTooltip
     function self:GetTooltip()
         if self._isr_tooltip_override ~= nil then
@@ -320,8 +320,8 @@ end
 --     function Inv:Rebuild() base(self); ... self:AddEquipSlot(...) end
 -- 这里如果只包实例方法（function self:Rebuild），构造那一刻就把类方法的引用冻住了；
 -- 之后别的模组再换掉类方法，这次调用永远绕过它 —— 现象是「装了本模组之后，新增的
--- 护符栏 / 背包栏不见了」。四五六格 priority 默认 0、按名字排在本模组之后，正好中招。
--- 所以这个钩子必须挂在类上，并且只在加载期挂一次，让后加载的模组能链在我们外面。
+-- 护符栏 / 背包栏不见了」四五六格 priority 默认 0、按名字排在本模组之后，正好中招
+-- 所以这个钩子必须挂在类上，并且只在加载期挂一次，让后加载的模组能链在我们外面
 local function GetInventoryBarClass()
     local call = ISR.Runtime ~= nil and ISR.Runtime.pcall or nil
     if call == nil then
@@ -392,7 +392,7 @@ AddClassPostConstruct("widgets/containerwidget", function(self)
 
     -- Close 不一定被调用：玩家死亡时 HUD 整体重建、别的模组直接把 widget 摘掉，
     -- 表里就会留下失效 widget 并一直挡住 GC。Kill 是 Widget 的回收入口
-    -- （widgets/widget.lua:325，KillAllChildren 也走它）。
+    -- （widgets/widget.lua:325，KillAllChildren 也走它）
     local old_Kill = self.Kill
     if old_Kill ~= nil then
         function self:Kill(...)
@@ -406,9 +406,9 @@ end)
 -- 静音「新配方可合成」提示音（isr_crafting.lua 的借料顺带引起的那一声）
 --
 -- 声音来源：craftingmenu_widget 里「某个分类的可合成数量比上次多」就置
--- new_recipe_available，pinbar 的 SetCraftingState 据此播 dontstarve/HUD/recipe_ready。
--- 借料让「拿进一件物品就凑够一个配方」，于是这个计数频繁变多，响得莫名其妙。
--- 只在「刚刚有一次配方是被借料点亮的」这一瞬间掐掉，纯靠物品栏凑齐的照常响。
+-- new_recipe_available，pinbar 的 SetCraftingState 据此播 dontstarve/HUD/recipe_ready
+-- 借料让「拿进一件物品就凑够一个配方」，于是这个计数频繁变多，响得莫名其妙
+-- 只在「刚刚有一次配方是被借料点亮的」这一瞬间掐掉，纯靠物品栏凑齐的照常响
 -- ---------------------------------------------------------------------------
 AddClassPostConstruct("widgets/redux/craftingmenu_pinbar", function(self)
     local button = self.open_menu_button

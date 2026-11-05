@@ -3,9 +3,9 @@ ISR.PERSONAL_STORAGE_DEPTH = ISR.PERSONAL_STORAGE_DEPTH or 3
 
 -- ---------------------------------------------------------------------------
 -- 客户端能力登记
---   all_clients_require_mod = false：进世界的玩家可能没装本模组。
+--   all_clients_require_mod = false：进世界的玩家可能没装本模组
 --   只有发过 ISR RPC 的玩家才确定带客户端部分，才往回收标记同步；
---   没装的玩家一条 RPC 都收不到，避免未知模组 RPC 落在客户端。
+--   没装的玩家一条 RPC 都收不到，避免未知模组 RPC 落在客户端
 -- ---------------------------------------------------------------------------
 ISR._capable_clients = ISR._capable_clients or {}
 
@@ -56,7 +56,7 @@ end
 
 -- ---------------------------------------------------------------------------
 -- 0.1.0 的旧存档迁移（当时标记按 eslot / player_inventory 等字段记录）
--- 新存档由 isr_slotmarkstore 组件自己负责，这里只在读到旧字段时跑一次。
+-- 新存档由 isr_slotmarkstore 组件自己负责，这里只在读到旧字段时跑一次
 -- ---------------------------------------------------------------------------
 local function ResolveLegacyContainer(player, saved)
     local inventory = player ~= nil and player.components ~= nil and player.components.inventory or nil
@@ -140,18 +140,18 @@ end)
 -- ---------------------------------------------------------------------------
 -- 随身容器的标记备份（存在玩家实体上）
 --
--- 正常路径：标记随容器实体的 isr_slotmarkstore 一起存档。但容器 prefab 若先
+-- 正常路径：标记随容器实体的 isr_slotmarkstore 一起存档但容器 prefab 若先
 -- AddComponent("container") 再加 inventoryitem（原版 beargerrfur_sack 就是这样），
 -- 实体构造时组件还没挂上，读档只会把数据丢掉；跨 shard（下地穴）也依赖引擎原样
--- 搬运组件数据。
+-- 搬运组件数据
 -- 所以额外存一份「容器在玩家身上的位置 → 标记」快照，读档 / 下地穴后按位置把
--- 空缺的格补回来。容器位置只有一层（物品栏第 N 格 / 装备栏某槽 / 玩家自身），
--- 因为标记本来就只允许设在这三处。
+-- 空缺的格补回来容器位置只有一层（物品栏第 N 格 / 装备栏某槽 / 玩家自身），
+-- 因为标记本来就只允许设在这三处
 -- ---------------------------------------------------------------------------
 ISR.MARK_BACKUP_KEY = "isr_slot_marks"
 
 -- 路径格式：inv（玩家自己）、inv:3（物品栏第 3 格）、equip:back（装备栏背包）、
--- 以及往容器里再走一层：inv:5/2（物品栏第 5 格的桶里第 2 格）。
+-- 以及往容器里再走一层：inv:5/2（物品栏第 5 格的桶里第 2 格）
 local function FindStoragePath(inst, target, prefix, depth)
     local container = inst ~= nil and inst.components ~= nil and inst.components.container or nil
     if container == nil or container.slots == nil then
@@ -380,9 +380,9 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_REQUEST_SYNC, function(player)
     ISR.SyncAllMarksToClient(player)
 end)
 
--- 全量同步请求的去重窗口。取值要求：大于一个 RTT（否则没等到回包就放行下一次问），
--- 小于玩家能察觉的延迟。正常路径由 RPC_SYNC_BEGIN 清掉这个标记，这里的定时器只是兜底 ——
--- 回包丢了也不会永久卡住后续请求。
+-- 全量同步请求的去重窗口取值要求：大于一个 RTT（否则没等到回包就放行下一次问），
+-- 小于玩家能察觉的延迟正常路径由 RPC_SYNC_BEGIN 清掉这个标记，这里的定时器只是兜底 ——
+-- 回包丢了也不会永久卡住后续请求
 ISR.SNAPSHOT_REQUEST_TIMEOUT = 0.25
 
 function ISR.RequestMarkSnapshot()

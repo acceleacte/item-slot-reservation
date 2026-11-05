@@ -1,7 +1,7 @@
 ISR = ISR or {}
 
--- 读档时原版会用存档槽位号调 GiveItem（Inventory:OnLoad / Container:OnLoad）。
--- 那是恢复既有数据，不是玩家往标记格里塞别的物品，期间不能清标记。
+-- 读档时原版会用存档槽位号调 GiveItem（Inventory:OnLoad / Container:OnLoad）
+-- 那是恢复既有数据，不是玩家往标记格里塞别的物品，期间不能清标记
 local function IsStorageLoading(storage)
     return storage ~= nil
         and (storage.isloading == true or storage._isr_loading == true)
@@ -87,7 +87,7 @@ AddPlayerInventoryPostInit(function(self)
         if target_inventory_only then
             -- Shift 转移的落点顺序：该物品的空预留格（TryPlaceByMarks 已处理）
             -- → 物品栏同类未满堆 → 原版给的合法格 → 物品栏未预留空格
-            -- → 背包（这里返回 nil，交给原版 GiveItem 落背包）。
+            -- → 背包（这里返回 nil，交给原版 GiveItem 落背包）
             for inventory_slot = 1, self:GetNumSlots() do
                 if ISR.CanStackIntoInventorySlot ~= nil
                     and ISR.CanStackIntoInventorySlot(self, item, inventory_slot)
@@ -165,7 +165,7 @@ AddPlayerInventoryPostInit(function(self)
             end
         end
 
-        -- 这个判定要枚举全部带标记的容器；下面两个分支问的是同一件事，算一次。
+        -- 这个判定要枚举全部带标记的容器；下面两个分支问的是同一件事，算一次
         local reserve_marked = ISR.ShouldReserveMarkedSlotsForItem(self.inst, inst)
         if slot == nil
             and reserve_marked
@@ -173,8 +173,8 @@ AddPlayerInventoryPostInit(function(self)
         then
             local marked_slot, marked_container = GetFallbackUnmarkedEmptySlot(self, inst, placement_context)
             if marked_slot == nil then
-                -- 物品栏没有可用位：交回原版，物品落进背包/随身容器，而不是整单失败。
-                -- 背包也满、或来源本身就是背包（原版会置 ignoreoverflow）时，原版自己返回失败。
+                -- 物品栏没有可用位：交回原版，物品落进背包/随身容器，而不是整单失败
+                -- 背包也满、或来源本身就是背包（原版会置 ignoreoverflow）时，原版自己返回失败
                 ISR.Log("Reserved inventory full", tostring(inst ~= nil and inst.prefab or nil))
                 local fallback_result = old_GiveItem(self, inst, nil, src_pos)
                 ISR.Log("Reserved inventory fallback result", tostring(fallback_result))
@@ -192,7 +192,7 @@ AddPlayerInventoryPostInit(function(self)
         ISR.Log("Inv give result", tostring(inst ~= nil and inst.prefab or nil), "slot", tostring(slot), "result", tostring(result))
         if result then
             -- 只能放物品栏的物品（余烬 / 灵魂）绕过预留规则，可能直接落进被预留的格；
-            -- 落进去了就把那格的预留解除，不留「装错东西的死格」。
+            -- 落进去了就把那格的预留解除，不留「装错东西的死格」
             local landed_slot = requested_slot
             if landed_slot == nil
                 and type(result) == "number"
@@ -211,8 +211,8 @@ AddPlayerInventoryPostInit(function(self)
 end)
 
 -- 原版 GiveItem 会自己挑格（slot 为 nil 时走 GetSpecificSlotForItem），落点只有事后
--- 回头看 GetItemSlot 才知道。手动拖入、Swap、Shift 转移、自动放入都可能不给 slot，
--- 只按 slot 判就会漏掉「预留格被别的东西占住」的情况，预留留在那儿成了死格。
+-- 回头看 GetItemSlot 才知道手动拖入、Swap、Shift 转移、自动放入都可能不给 slot，
+-- 只按 slot 判就会漏掉「预留格被别的东西占住」的情况，预留留在那儿成了死格
 local function ClearContainerMarkOnLandedSlot(container_comp, item, slot, result)
     if not result or item == nil or container_comp == nil or IsStorageLoading(container_comp) then
         return
@@ -235,7 +235,7 @@ AddComponentPostInit("container", function(self)
         if owner == nil and ISR.GetMarkOwnerPlayer ~= nil then
             -- 基地箱子 / 没带眼骨的切斯特：没有 inventoryitem 主人链，
             -- 归属记在 mark store 上。用记下的 owner 参与路由，
-            -- 否则「回预留格」「避开预留格」这两条对它们完全不生效。
+            -- 否则「回预留格」「避开预留格」这两条对它们完全不生效
             owner = ISR.GetMarkOwnerPlayer(self.inst)
         end
 
@@ -265,8 +265,8 @@ AddComponentPostInit("container", function(self)
         then
             local next_slot, next_container = ISR.GetNextUnmarkedContainerAvailableSlot(self, item, owner)
             if next_slot == nil then
-                -- 没有非预留的空位：交回原版（原版会用上预留格）。
-                -- 硬 return false 会让物品直接退回来源，比「先避开、实在没位再用」更差。
+                -- 没有非预留的空位：交回原版（原版会用上预留格）
+                -- 硬 return false 会让物品直接退回来源，比「先避开、实在没位再用」更差
                 ISR.Log(
                     "Reserved container full",
                     tostring(item ~= nil and item.prefab or nil),

@@ -32,9 +32,9 @@ local function NewContainerEntity(components)
     }
 end
 
--- 所有容器实体都要在构造期挂上组件，不看 inventoryitem。
+-- 所有容器实体都要在构造期挂上组件，不看 inventoryitem
 -- 组件构造期不在，存档数据就只能靠 add_component_if_missing 让引擎补建，
--- 而那个标记会让关掉模组的玩家再也进不了档。
+-- 而那个标记会让关掉模组的玩家再也进不了档
 local world_container = NewContainerEntity({})
 component_callbacks.container({ inst = world_container })
 assert_equal(#attached, 1, "world container receives the mark store too (keeps saves loadable after uninstall)")

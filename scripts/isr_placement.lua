@@ -8,7 +8,7 @@ local select_values = runtime.select or select
 local unpack_values = runtime.unpack or unpack or table.unpack
 local protected_call = runtime.xpcall or xpcall
 
--- 提到模块级：每次 Shift 转移不必再新建一个闭包。
+-- 提到模块级：每次 Shift 转移不必再新建一个闭包
 local function Traceback(message)
     return debug_lib ~= nil and debug_lib.traceback ~= nil and debug_lib.traceback(message, 2) or message
 end
@@ -75,10 +75,10 @@ function ISR.HasServerMarksForItem(owner, item)
 end
 
 -- 同一次 GiveItem 里，「这个物品有没有预留格」会被问两三遍
--- （ShouldRoutePlacementByMarks → TryPlaceByMarks，容器路径还要再问一次）。
--- 每次问都要枚举全部带标记的容器、建表、排序。标记只在这条链路之外变化，
--- 所以第一次算完挂在 context 上，后续直接读。context 是每次 GiveItem 新建的，
--- 不存在跨帧陈旧的问题。
+-- （ShouldRoutePlacementByMarks → TryPlaceByMarks，容器路径还要再问一次）
+-- 每次问都要枚举全部带标记的容器、建表、排序标记只在这条链路之外变化，
+-- 所以第一次算完挂在 context 上，后续直接读context 是每次 GiveItem 新建的，
+-- 不存在跨帧陈旧的问题
 function ISR.GetContextMarks(context)
     if context == nil then
         return nil
@@ -95,7 +95,7 @@ function ISR.GetContextMarks(context)
     return context.marks
 end
 
--- 只有「这个物品有预留格」才改写放置路由，其余一律交给原版逻辑。
+-- 只有「这个物品有预留格」才改写放置路由，其余一律交给原版逻辑
 function ISR.ShouldRoutePlacementByMarks(context)
     return context ~= nil
         and context.slot == nil
@@ -108,7 +108,7 @@ function ISR.ShouldRoutePlacementByMarks(context)
 end
 
 -- 只能放物品栏的物品（余烬 / 灵魂）不参与预留：它们没有背包这个退路，
--- 拦住只会让物品无处可去。
+-- 拦住只会让物品无处可去
 function ISR.ShouldReserveMarkedSlotsForItem(owner, item)
     return owner ~= nil
         and item ~= nil
@@ -118,20 +118,20 @@ function ISR.ShouldReserveMarkedSlotsForItem(owner, item)
         and ISR.HasAnyServerMarks(owner)
 end
 
--- 玩家自己身上的标记（物品栏 / 装备栏）与容器里的标记（切斯特、背包里的桶）分两类。
+-- 玩家自己身上的标记（物品栏 / 装备栏）与容器里的标记（切斯特、背包里的桶）分两类
 local function IsOwnInventoryMark(owner, mark)
     return owner ~= nil and mark.container_guid == owner.GUID
 end
 
 -- 玩家身上的容器（背包、克朗普斯袋子、背包里的桶）：里面的固定格永远参与自动回位，
--- 不受 pickup_to_container 影响。开关只决定「世界里的容器」（切斯特、基地箱子）算不算。
+-- 不受 pickup_to_container 影响开关只决定「世界里的容器」（切斯特、基地箱子）算不算
 local function IsCarriedContainerMark(owner, mark)
     return ISR.IsStorageCarriedByPlayer ~= nil
         and ISR.IsStorageCarriedByPlayer(owner, ISR.GetStorageForMark(owner, mark))
 end
 
 -- 「拾取后直接放回容器」开着时，容器里的标记优先；关掉时只留玩家身上的容器，
--- 世界里的容器（切斯特、箱子）不参与，物品照常回玩家物品栏的固定格。
+-- 世界里的容器（切斯特、箱子）不参与，物品照常回玩家物品栏的固定格
 local function OrderMarksForConfig(owner, marks)
     local wants_container = ISR.Config == nil or ISR.Config.pickup_to_container ~= false
     local container_marks = {}
@@ -155,7 +155,7 @@ local function OrderMarksForConfig(owner, marks)
 end
 
 -- 固定格里已经有同种物品的未满堆叠时也要认：草、树枝这类资源采集后应当并进去，
--- 只判「空不空」会把它推回物品栏（容器没打开时尤其明显）。
+-- 只判「空不空」会把它推回物品栏（容器没打开时尤其明显）
 local function CanPlaceIntoMarkedSlot(adapter, storage, item, slot, context)
     if adapter.CanUseSlot ~= nil then
         return adapter:CanUseSlot(storage, item, slot, context)
@@ -163,7 +163,7 @@ local function CanPlaceIntoMarkedSlot(adapter, storage, item, slot, context)
     return adapter:CanUseEmptySlot(storage, item, slot, context)
 end
 
--- 没中的时候把每个候选为什么被跳过记下来，日志里只出现 no hit 太难查。
+-- 没中的时候把每个候选为什么被跳过记下来，日志里只出现 no hit 太难查
 local function NoteSkip(skipped, mark, reason)
     if skipped == nil then
         return
@@ -210,7 +210,7 @@ function ISR.TryPlaceByMarks(context)
                 local result, result_slot = adapter:PlaceInSlot(storage, context.item, mark.slot, context)
                 if result then
                     ISR.Log("Marked placement hit", tostring(context.item.prefab), "container", tostring(mark.container_guid), "slot", tostring(mark.slot), "reason", tostring(context.reason))
-                    -- 物品直接被容器吃了，物品栏不会收到 gotnewitem，拾取音效得自己补。
+                    -- 物品直接被容器吃了，物品栏不会收到 gotnewitem，拾取音效得自己补
                     if result ~= "inventory"
                         and context.inventory ~= nil
                         and not IsOwnInventoryMark(context.owner, mark)

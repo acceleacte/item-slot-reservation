@@ -1,7 +1,7 @@
 -- 容器 GiveItem 与预留格的两条接线：
 --   1. 物品进容器时优先避开预留格（原版自己挑格也要判，不能只看 slot 参数）；
 --   2. 没有在线主人的容器（基地箱子）也要走这套，不能整条 early return 掉；
---   3. 真占进预留格且 prefab 不匹配时，解除预留（和物品栏一致）。
+--   3. 真占进预留格且 prefab 不匹配时，解除预留（和物品栏一致）
 local function assert_equal(actual, expected, message)
     if actual ~= expected then
         error((message or "values differ")..": expected "..tostring(expected)..", got "..tostring(actual), 2)

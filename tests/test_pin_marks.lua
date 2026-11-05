@@ -78,7 +78,7 @@ local slot = { num = 3, container = container, focus = true }
 local function ClientMark() return player._item_slot_reservation_client_marks["1:3"] end
 
 -- 固定：客户端只发请求，不预写本地标记 -----------------------------------------
--- 预写就是「闪一下」的来源：没权限时先画框再被服务端擦掉。这里锁死这个行为。
+-- 预写就是「闪一下」的来源：没权限时先画框再被服务端擦掉这里锁死这个行为
 assert_equal(ISR.PinClientSlotMark(slot), true, "pinning an occupied slot sends a request")
 assert_equal(ClientMark(), nil, "the client does not paint before the server confirms")
 assert_equal(#sent_rpcs, 1, "one request is sent")

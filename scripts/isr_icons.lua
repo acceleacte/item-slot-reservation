@@ -42,8 +42,8 @@ local function ReadWidgetSize(widget)
     return nil, nil
 end
 
--- 依次试 bg / bgimage / image / 槽位自身，取第一个拿得到尺寸的。
--- 这个函数在每帧的布局刷新里都会跑，不建中间表。
+-- 依次试 bg / bgimage / image / 槽位自身，取第一个拿得到尺寸的
+-- 这个函数在每帧的布局刷新里都会跑，不建中间表
 local function GetSlotBaseSize(slot)
     if slot == nil then
         return ISR.SLOT_BORDER_FALLBACK_SIZE
@@ -63,8 +63,8 @@ local function GetSlotBaseSize(slot)
     return w ~= nil and math.min(w, h) or ISR.SLOT_BORDER_FALLBACK_SIZE
 end
 
--- 尺寸没变就不调 SetSize：这会走 UI 布局重算，每帧调一次是白烧的。
--- 缓存值跟着自己的 widget 走，widget 只在为 nil 时创建，不会被换掉。
+-- 尺寸没变就不调 SetSize：这会走 UI 布局重算，每帧调一次是白烧的
+-- 缓存值跟着自己的 widget 走，widget 只在为 nil 时创建，不会被换掉
 local function SyncSlotBorderSize(slot, base_size)
     if slot == nil or slot._isr_slot_border == nil or slot._isr_slot_border.SetSize == nil then
         return
@@ -79,8 +79,8 @@ local function SyncSlotBorderSize(slot, base_size)
     slot._isr_slot_border:SetSize(size, size)
 end
 
--- 木框透明度取自配置项 border_opacity（0~1）。老配置里没有这一项时按 1（不透明）处理，
--- 与加选项之前的观感一致。
+-- 木框透明度取自配置项 border_opacity（0~1）老配置里没有这一项时按 1（不透明）处理，
+-- 与加选项之前的观感一致
 local function GetBorderAlpha()
     local config = ISR.Config
     if config == nil or config.border_opacity == nil then
@@ -111,7 +111,7 @@ local function SyncSlotIconSize(slot, base_size)
     slot._isr_slot_icon:SetSize(size, size)
 end
 
--- 预留格的图标就是该物品自己的物品栏贴图；取不到就只画木框。
+-- 预留格的图标就是该物品自己的物品栏贴图；取不到就只画木框
 function ISR.GetPrefabIcon(prefab)
     local key = prefab ~= nil and ISR.NormalizePrefabKey(prefab) or nil
     if key == nil then
@@ -220,7 +220,7 @@ function ISR.RefreshSlotBorderLayout(slot)
         return
     end
 
-    -- 两个 widget 共用一次尺寸查询，别让 GetSlotBaseSize 跑两遍。
+    -- 两个 widget 共用一次尺寸查询，别让 GetSlotBaseSize 跑两遍
     local base_size = GetSlotBaseSize(slot)
     SyncSlotIconSize(slot, base_size)
     if slot._isr_slot_border ~= nil then

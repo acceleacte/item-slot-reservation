@@ -1,8 +1,8 @@
 ISR = ISR or {}
 
 -- 合成借料（0.1.7）：合成时自动补足材料缺口，来源是「已固定且在作用距离内」的世界容器
--- （切斯特、基地箱子等）。原版只扫玩家物品栏 + 当前打开的容器（inventory.opencontainers），
--- 关着的容器不参与；本文件把缺口部分从容器内固定格里补上。
+-- （切斯特、基地箱子等）原版只扫玩家物品栏 + 当前打开的容器（inventory.opencontainers），
+-- 关着的容器不参与；本文件把缺口部分从容器内固定格里补上
 --
 -- 三个 hook 点（scripts/components/builder.lua）：
 --   HasIngredients     合成入口判定，原版查不到关着的容器，补上容器供应后再判一次
@@ -10,11 +10,11 @@ ISR = ISR or {}
 --   RemoveIngredients  原版 RemoveItem 只认物品栏/打开的容器，容器条目在这里自己消费
 --
 -- 消费安全性：堆叠的部分扣减走 stackable:Get（对实体本身操作，不看容器开闭）；
--- 整堆/单件走 Container:RemoveItem 清槽位表后 Remove。两种都不留幽灵引用。
+-- 整堆/单件走 Container:RemoveItem 清槽位表后 Remove两种都不留幽灵引用
 
 local GetValidRecipe = ISR.GetGlobalValue("GetValidRecipe", nil)
 local RoundBiasedUp = ISR.GetGlobalValue("RoundBiasedUp", nil)
--- mod 沙箱里 pcall 是 nil（AGENTS §4.3），统一从 Runtime 取。
+-- mod 沙箱里 pcall 是 nil（AGENTS §4.3），统一从 Runtime 取
 local protected_call = ISR.Runtime ~= nil and ISR.Runtime.pcall or nil
 
 local function NormalizePrefab(prefab)
@@ -38,18 +38,18 @@ local function CanCraftWithItem(item)
         and (item.HasTag == nil or not item:HasTag("nocrafting"))
 end
 
--- 容器内当前堆叠数量。快照只在同一次合成的调用栈里用，中途没有别的游戏逻辑插进来。
+-- 容器内当前堆叠数量快照只在同一次合成的调用栈里用，中途没有别的游戏逻辑插进来
 local function GetStackCount(item)
     local stackable = item ~= nil and item.components ~= nil and item.components.stackable or nil
     return stackable ~= nil and stackable:StackSize() or 1
 end
 
--- 收集本玩家「可借料」的容器内固定格供应：prefab -> { {item=实体, count=堆叠数}, ... }。
+-- 收集本玩家「可借料」的容器内固定格供应：prefab -> { {item=实体, count=堆叠数}, ... }
 -- 排除三类，避免与原版统计重叠导致重复扣料：
 --   1. 玩家自己的物品栏标记（原版本就算）
 --   2. 随身容器（背包、背包里的桶；背包是原版 overflow，本就参与合成）
 --   3. 此刻被该玩家打开的容器（原版 opencontainers 已算）
--- 另排除 excludefromcrafting / readonlycontainer，与原版对打开容器的排除规则一致。
+-- 另排除 excludefromcrafting / readonlycontainer，与原版对打开容器的排除规则一致
 function ISR.GetCraftingSupply(player)
     local supply = {}
     if player == nil or player.components == nil or player.components.inventory == nil then
@@ -108,8 +108,8 @@ local function SumSupply(list)
     return total
 end
 
--- 把容器供应填进 materials（实体 → 数量）。只补原版没找够的缺口；
--- 同一实体已在 materials 里的跳过（原版统计过的和供应集合不相交，这里只作保险）。
+-- 把容器供应填进 materials（实体 → 数量）只补原版没找够的缺口；
+-- 同一实体已在 materials 里的跳过（原版统计过的和供应集合不相交，这里只作保险）
 function ISR.FillIngredientsFromSupply(player, builder, recipe, materials)
     if recipe == nil or recipe.ingredients == nil or materials == nil then
         return
@@ -147,8 +147,8 @@ function ISR.FillIngredientsFromSupply(player, builder, recipe, materials)
     end
 end
 
--- 只判够不够，不构造 materials。供应集合与原版统计（物品栏 + 打开的容器）不相交，
--- 所以「缺口 ≤ 供应总量」是必要且充分的判定。
+-- 只判够不够，不构造 materials供应集合与原版统计（物品栏 + 打开的容器）不相交，
+-- 所以「缺口 ≤ 供应总量」是必要且充分的判定
 function ISR.HasIngredientsWithSupply(player, builder, recipe)
     if recipe == nil or recipe.ingredients == nil then
         return false
@@ -181,10 +181,10 @@ function ISR.HasIngredientsWithSupply(player, builder, recipe)
     return true
 end
 
--- 消费 materials 里住在容器里的条目，结构照原版两层：{[材料类型] = {[实体] = 数量}}。
--- 物品栏条目留给原版（保持角色消耗、事件等原逻辑）。
+-- 消费 materials 里住在容器里的条目，结构照原版两层：{[材料类型] = {[实体] = 数量}}
+-- 物品栏条目留给原版（保持角色消耗、事件等原逻辑）
 -- 部分扣减：stackable:Get 拆出一个新实体并扣原堆数量，原堆留在容器里；
--- 整堆/单件：Container:RemoveItem 清槽位表后再 Remove，不留幽灵引用。
+-- 整堆/单件：Container:RemoveItem 清槽位表后再 Remove，不留幽灵引用
 function ISR.ConsumeIngredientsFromContainers(player, ingredients)
     if ingredients == nil then
         return
@@ -224,7 +224,7 @@ function ISR.ConsumeIngredientsFromContainers(player, ingredients)
                 end
             else
                 -- 材料本身是容器（背包、袋子之类）：原版 RemoveIngredients 会先 DropEverything，
-                -- 这里整件消耗前照做，否则容器里的东西跟着实体一起消失。
+                -- 这里整件消耗前照做，否则容器里的东西跟着实体一起消失
                 local carried = item.components.container
                 if carried ~= nil and carried.DropEverything ~= nil then
                     carried:DropEverything(player ~= nil and player.GetPosition ~= nil and player:GetPosition() or nil)
@@ -239,8 +239,8 @@ function ISR.ConsumeIngredientsFromContainers(player, ingredients)
             end
         end
 
-        -- 空掉的类型表顺手摘掉，原版循环看到的就是干净的 materials。
-        -- mod 沙箱里 next 为 nil（AGENTS §4.3），空表判定用 pairs 走一遍。
+        -- 空掉的类型表顺手摘掉，原版循环看到的就是干净的 materials
+        -- mod 沙箱里 next 为 nil（AGENTS §4.3），空表判定用 pairs 走一遍
         local is_empty = true
         for _ in pairs(entry.ents) do
             is_empty = false
@@ -309,13 +309,13 @@ end)
 -- 供应量同步（客户端配方可用性用）
 --
 -- 配方格子是灰是亮由客户端 builder_replica:HasIngredients 决定，它只数物品栏
--- 和「当前打开的容器」（inventory_classified 的 GetOpenContainers）。关着的切斯特、
--- 基地箱子里有多少东西客户端根本不知道，光靠服务端 hook 改不了格子状态。
+-- 和「当前打开的容器」（inventory_classified 的 GetOpenContainers）关着的切斯特、
+-- 基地箱子里有多少东西客户端根本不知道，光靠服务端 hook 改不了格子状态
 -- 所以服务端把「本玩家可借的固定格数量」按 prefab 汇总成串推过去，客户端判定时
--- 加上这份数字，就能和服务端 HasIngredients 的结论保持一致。
+-- 加上这份数字，就能和服务端 HasIngredients 的结论保持一致
 --
 -- 口径必须和服务端 GetCraftingSupply 完全一致（排除随身容器 / 玩家打开的容器 /
--- excludefromcrafting / 超距离），否则客户端亮着、服务端拒绝。
+-- excludefromcrafting / 超距离），否则客户端亮着、服务端拒绝
 -- ---------------------------------------------------------------------------
 local function SerializeSupply(counts)
     local parts = {}
@@ -360,7 +360,7 @@ function ISR.PushCraftingSupply(player)
 end
 
 -- 0.5s 一轮：标记变化、容器内容变化、走进走出作用距离、开关容器，都会在这一拍里
--- 落到 payload 差异上。没变化不发 RPC。
+-- 落到 payload 差异上没变化不发 RPC
 local CRAFT_SUPPLY_SYNC_PERIOD = 0.5
 
 AddPlayerPostInit(function(inst)
@@ -378,7 +378,7 @@ end)
 -- ---------------------------------------------------------------------------
 -- 客户端：配方可用性判定
 -- 原版 builder_replica:HasIngredients 只认物品栏 + 打开的容器；这里在它判负后，
--- 用服务端推来的固定格数量补足缺口，再判一次。
+-- 用服务端推来的固定格数量补足缺口，再判一次
 -- ---------------------------------------------------------------------------
 function ISR.GetSyncedCraftSupply(prefab)
     local supply = ISR._craft_supply
@@ -386,12 +386,12 @@ function ISR.GetSyncedCraftSupply(prefab)
 end
 
 -- 返回 true 表示「缺口全部由固定格补上，且角色/技术材料齐」
--- 合成菜单一次重算会把每个配方缺的每种材料都过一遍，逐条打日志能刷出几千行。
--- 同一种材料每次进游戏只记一次，够定位问题，也不把日志淹掉。
+-- 合成菜单一次重算会把每个配方缺的每种材料都过一遍，逐条打日志能刷出几千行
+-- 同一种材料每次进游戏只记一次，够定位问题，也不把日志淹掉
 local supply_short_logged = {}
 
 -- 同步表里一条材料都没有的配方，结论必然和原版一样（都是不够），
--- 不用调任何 inventory:Has。菜单一次重算是几百个配方，绝大多数属于这一类。
+-- 不用调任何 inventory:Has菜单一次重算是几百个配方，绝大多数属于这一类
 local function RecipeUsesSupply(recipe)
     local supply = ISR._craft_supply
     if supply == nil then
@@ -407,9 +407,9 @@ local function RecipeUsesSupply(recipe)
     return false
 end
 
--- 借料点亮配方的时刻。pinbar 的「新配方」提示音（dontstarve/HUD/recipe_ready）只在
+-- 借料点亮配方的时刻pinbar 的「新配方」提示音（dontstarve/HUD/recipe_ready）只在
 -- 借料刚动过手的那一瞬间静音：拿进一件物品就凑够配方是个噪音源，但「真的捡够了材料」
--- 属于原版正当提示，不能一起吞掉。
+-- 属于原版正当提示，不能一起吞掉
 local RECIPE_READY_MUTE_WINDOW = 0.35
 local supply_flipped_at = nil
 
@@ -494,7 +494,7 @@ function ISR.HasIngredientsWithClientSupply(player, builder, recipe)
 end
 
 -- replica 组件不走 EntityScript:AddComponent（entityreplica.lua 里直接 cmp(self) 构造），
--- AddComponentPostInit 对它不触发，只能用 AddClassPostConstruct 包构造器。
+-- AddComponentPostInit 对它不触发，只能用 AddClassPostConstruct 包构造器
 AddClassPostConstruct("components/builder_replica", function(self)
     local old_HasIngredients = self.HasIngredients
     function self:HasIngredients(recipe)
@@ -544,12 +544,12 @@ end)
 --
 -- 原版 widgets/redux/craftingmenu_ingredients.lua 用
 --     local has, num_found = inventory:Has(type, amount, true)
--- 取「身上有几个」，再画成 `num_found/amount`，不够就染红（ingredientui.lua）。
+-- 取「身上有几个」，再画成 `num_found/amount`，不够就染红（ingredientui.lua）
 -- 借料的材料在**关着的**箱子里，客户端 inventory 数不到 ⇒ 明明能合成，界面却显示
--- 「1/2」红字，玩家以为材料不够。这里在原版 SetRecipe 执行期间给 inventory:Has
--- 打一层临时补丁，把服务端推来的可借数量加进 num_found，显示的就是真正可用的量。
+-- 「1/2」红字，玩家以为材料不够这里在原版 SetRecipe 执行期间给 inventory:Has
+-- 打一层临时补丁，把服务端推来的可借数量加进 num_found，显示的就是真正可用的量
 --
--- 只包这一个方法，不改原版逻辑；退出时无论成败都还原，别的模组对 Has 的包装不受影响。
+-- 只包这一个方法，不改原版逻辑；退出时无论成败都还原，别的模组对 Has 的包装不受影响
 -- ---------------------------------------------------------------------------
 local function SupplyForPrefab(prefab)
     if prefab == nil or ISR.GetSyncedCraftSupply == nil then
@@ -565,12 +565,12 @@ function ISR.WithSupplyAwareInventory(inventory, fn, ...)
         return fn ~= nil and fn(...) or nil
     end
 
-    -- 沙箱里拿不到 pcall 时退化成直接调用：宁可少一层保护，也不能把界面搞崩。
+    -- 沙箱里拿不到 pcall 时退化成直接调用：宁可少一层保护，也不能把界面搞崩
     if protected_call == nil then
         return fn(...)
     end
 
-    -- 嵌套调用（材料图标的子配方弹窗）不重复叠加供应量：外层已经加过了。
+    -- 嵌套调用（材料图标的子配方弹窗）不重复叠加供应量：外层已经加过了
     if inventory._isr_supply_patch then
         return fn(...)
     end
@@ -608,7 +608,7 @@ AddClassPostConstruct("widgets/redux/craftingmenu_ingredients", function(self)
         return
     end
 
-    -- 详情面板、固定栏悬停、材料图标里的子配方弹窗都构造这个类，一处覆盖三处。
+    -- 详情面板、固定栏悬停、材料图标里的子配方弹窗都构造这个类，一处覆盖三处
     function self:SetRecipe(recipe, ...)
         if not ISR.IsCraftBorrowEnabled() or ISR._craft_supply == nil then
             return old_SetRecipe(self, recipe, ...)

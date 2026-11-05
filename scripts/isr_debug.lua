@@ -26,7 +26,7 @@ local function GetInventoryBarSlot(slotnum, use_backpack)
     return invbar, slotlist ~= nil and slotlist[ISR.ToNumber(slotnum) or 1] or nil
 end
 
--- 控制台入口：背包里没有该物品时也能预先固定格子。
+-- 控制台入口：背包里没有该物品时也能预先固定格子
 -- 在客户端控制台执行，例如：ISR.DebugSetPrefabMark(3, "grass")
 function ISR.DebugSetPrefabMark(slotnum, prefab, use_backpack)
     local _, slot = GetInventoryBarSlot(slotnum, use_backpack)

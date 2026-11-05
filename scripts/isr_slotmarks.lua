@@ -8,8 +8,8 @@ local function NormalizePrefab(prefab)
     return prefab ~= nil and string.lower(tostring(prefab)) or nil
 end
 
--- 标记就是一个 prefab 名（字符串）。历史版本里标记是 {eslot=..., kind=...} 表，
--- 这里统一取键，读到表时只看 prefab / eslot 字段。
+-- 标记就是一个 prefab 名（字符串）历史版本里标记是 {eslot=..., kind=...} 表，
+-- 这里统一取键，读到表时只看 prefab / eslot 字段
 local function GetMarkPrefab(mark)
     if mark == nil then
         return nil
@@ -38,16 +38,16 @@ function ISR.MarkMatchesItem(mark, item)
         and NormalizePrefab(item.prefab) == prefab
 end
 
--- 标记不记名：容器是独立的东西，谁打开谁都能固定、清除、使用。
--- 容器不跟人绑定，也不存在「这只箱子归谁」的概念（用户 2026-11-04 指定）。
--- 原来的「第一个落标记的人成为容器 owner、别人改不了」整段已删除。
+-- 标记不记名：容器是独立的东西，谁打开谁都能固定、清除、使用
+-- 容器不跟人绑定，也不存在「这只箱子归谁」的概念（用户 2026-11-04 指定）
+-- 原来的「第一个落标记的人成为容器 owner、别人改不了」整段已删除
 
--- 枚举该玩家能用的标记。走注册表（有标记的容器都登记过），
--- 这样跟随型容器（切斯特、哈奇）和别的模组容器也能算进来。
+-- 枚举该玩家能用的标记走注册表（有标记的容器都登记过），
+-- 这样跟随型容器（切斯特、哈奇）和别的模组容器也能算进来
 -- 两段范围：
 --   * 自己的随身容器（物品栏、背包、背包里的桶）
 --   * 多人共享的世界容器（基地箱子、无主切斯特）—— 上面的标记所有人可见、可用，
---     谁拾取都回这个格；别人的背包不在其中（见 ISR.IsSharedMarkContainer）。
+--     谁拾取都回这个格；别人的背包不在其中（见 ISR.IsSharedMarkContainer）
 function ISR.GetServerMarks(player)
     local marks = {}
     for _, inst in ipairs(ISR.GetMarkContainerInstances()) do
@@ -88,8 +88,8 @@ function ISR.GetServerSlotMark(player, container_guid, slot)
     } or nil
 end
 
--- 「这一格对本物品开放吗」：没有标记，或标记就是这个 prefab。
--- 不构造标记表 —— 候选格搜索按格调用，一次拾取要跑几十次，临时表纯属垃圾。
+-- 「这一格对本物品开放吗」：没有标记，或标记就是这个 prefab
+-- 不构造标记表 —— 候选格搜索按格调用，一次拾取要跑几十次，临时表纯属垃圾
 function ISR.CanItemUseStoredMark(player, container_guid, slot, item)
     local store = ISR.GetSlotMarkStoreForGUID(player, container_guid, false)
     local mark = store ~= nil and store:GetMark(slot) or nil
@@ -109,7 +109,7 @@ end
 
 -- 标记不记名之后的同步口径：
 --   共享世界容器（基地箱子、无主切斯特）的标记谁都看得见 ⇒ 变化要广播给所有玩家；
---   随身容器只有主人看得见 ⇒ 只推给它的主人。
+--   随身容器只有主人看得见 ⇒ 只推给它的主人
 function ISR.BroadcastMarkChange(container_guid, slot, prefab, play_clear_sound)
     local all_players = ISR.GetGlobalValue("AllPlayers", nil)
     for _, player in pairs(all_players or {}) do
@@ -145,12 +145,12 @@ function ISR.SyncMarkChangeToViewers(container_inst, slot, prefab, play_clear_so
         return true
     end
 
-    -- 判不出主人（随身容器的实体暂时没挂 owner 链）时宁可多发，不要漏发。
+    -- 判不出主人（随身容器的实体暂时没挂 owner 链）时宁可多发，不要漏发
     ISR.BroadcastMarkChange(container_guid, slot, prefab, play_clear_sound)
     return true
 end
 
--- 这名玩家该不该收到这只容器的标记：自己的随身容器，或者共享的世界容器。
+-- 这名玩家该不该收到这只容器的标记：自己的随身容器，或者共享的世界容器
 function ISR.IsMarkContainerVisibleTo(player, container_guid)
     local inst = container_guid == player.GUID
         and player
@@ -217,8 +217,8 @@ end
 
 -- 容器钩子里的路由主人（回预留格 / 避开预留格需要一个 player）：
 --   独占模式 —— 第一个在这只容器落标记的玩家（store.owner），他独占这只容器；
---   共享模式 —— 此刻打开这只容器的玩家，没人打开就返回 nil。
--- 基地箱子、没带眼骨的切斯特没有 inventoryitem 主人链，只能靠这两条判。
+--   共享模式 —— 此刻打开这只容器的玩家，没人打开就返回 nil
+-- 基地箱子、没带眼骨的切斯特没有 inventoryitem 主人链，只能靠这两条判
 function ISR.GetMarkOwnerPlayer(container_inst)
     if container_inst == nil or container_inst.components == nil then
         return nil
@@ -245,10 +245,10 @@ function ISR.GetMarkOwnerPlayer(container_inst)
     return nil
 end
 
--- 容器路径的解标记：不要求容器有「在线主人」。
+-- 容器路径的解标记：不要求容器有「在线主人」
 -- 基地箱子、没带眼骨的切斯特只有 mark store 里的 owner userid，走
 -- ResolvePlayerStorageOwner 会得到 nil，于是整段容器钩子早退、预留永远不解除，
--- 格子被别的东西占住就成了死格。这里按 store 自己的 owner 判、按它找人同步。
+-- 格子被别的东西占住就成了死格这里按 store 自己的 owner 判、按它找人同步
 function ISR.ClearContainerSlotMarkOnMismatch(container_inst, slot, item)
     if container_inst == nil or slot == nil or item == nil then
         return false
@@ -279,7 +279,7 @@ function ISR.ClearContainerSlotMarkOnMismatch(container_inst, slot, item)
         return false
     end
 
-    -- 标记不记名：谁在看这只容器就把「清掉」推给谁（共享容器广播给所有人）。
+    -- 标记不记名：谁在看这只容器就把「清掉」推给谁（共享容器广播给所有人）
     ISR.SyncMarkChangeToViewers(container_inst, slot, nil, true)
 
     ISR.Log(
@@ -350,8 +350,8 @@ function ISR.GetNextServerMarkOrder(player)
     return store:NextOrder()
 end
 
--- 拒绝之后把服务端的真实状态推回去。
--- 共享容器人人可见，推真实值；独占模式下这只容器不归他就推 nil，别让他看到别人的框。
+-- 拒绝之后把服务端的真实状态推回去
+-- 共享容器人人可见，推真实值；独占模式下这只容器不归他就推 nil，别让他看到别人的框
 local function SyncAuthoritativeSlotMark(player, container_guid, slot)
     if ISR.IsMarkContainerVisibleTo ~= nil
         and not ISR.IsMarkContainerVisibleTo(player, container_guid)
@@ -374,7 +374,7 @@ function ISR.GetClientMarks()
     return player._item_slot_reservation_client_marks
 end
 
--- 客户端缓存直接存 prefab 字符串。
+-- 客户端缓存直接存 prefab 字符串
 function ISR.GetClientSlotMark(slot)
     local guid = ISR.GetSlotContainerGUID(slot)
     local marks = ISR.GetClientMarks()
@@ -388,8 +388,8 @@ function ISR.PlayClientMarkClearSound()
     end
 end
 
--- 固定成功的反馈音。和画框一起放在服务端确认之后播 —— 点击瞬间就响会让被拒的操作
--- 也有声音，玩家会误以为成功了。
+-- 固定成功的反馈音和画框一起放在服务端确认之后播 —— 点击瞬间就响会让被拒的操作
+-- 也有声音，玩家会误以为成功了
 function ISR.PlayClientMarkPinnedSound()
     local focal_point = ISR.GetFocalPoint()
     if focal_point ~= nil and focal_point.SoundEmitter ~= nil then
@@ -398,12 +398,12 @@ function ISR.PlayClientMarkPinnedSound()
 end
 
 -- 物品被直接放进容器时，玩家的物品栏收不到 gotnewitem，原版拾取音效也就不会播
--- （声音在 inventory.lua 的 gotnewitem 分支里，见 player_common 的 OnGotNewItem）。
--- 这里照原版的方式查一遍 PICKUPSOUNDS，给玩家一个反馈。
+-- （声音在 inventory.lua 的 gotnewitem 分支里，见 player_common 的 OnGotNewItem）
+-- 这里照原版的方式查一遍 PICKUPSOUNDS，给玩家一个反馈
 --
--- 只在服务端调用：声音挂在玩家实体上，随实体同步给附近客户端（和原版 drop 音一个路子）。
+-- 只在服务端调用：声音挂在玩家实体上，随实体同步给附近客户端（和原版 drop 音一个路子）
 -- 不要在这里查 IsMasterSimulation —— 它不是真正常驻的全局名，服务端开着 strict.lua，
--- GLOBAL["IsMasterSimulation"] 会直接抛 "variable is not declared" 把服务器打崩。
+-- GLOBAL["IsMasterSimulation"] 会直接抛 "variable is not declared" 把服务器打崩
 function ISR.PlayPickupSound(owner, item)
     if owner == nil or owner.SoundEmitter == nil then
         return
@@ -414,16 +414,16 @@ function ISR.PlayPickupSound(owner, item)
         return
     end
 
-    -- 物品可以把 pickupsound 设成 "NONE"（原版就是这么屏蔽的），查不到就静音。
+    -- 物品可以把 pickupsound 设成 "NONE"（原版就是这么屏蔽的），查不到就静音
     local sound = sounds[item ~= nil and item.pickupsound or "DEFAULT_FALLBACK"]
     if sound ~= nil then
         owner.SoundEmitter:PlaySound(sound)
     end
 end
 
--- 客户端只发请求，不预写本地标记。
--- 预写（乐观更新）会在「没有权限 / 被拒绝」时先画框再擦掉 —— 玩家看到的就是闪一下。
--- 现在改成等服务端 sync_mark 回来才落库、才画框：被拒绝时屏幕上完全没反应。
+-- 客户端只发请求，不预写本地标记
+-- 预写（乐观更新）会在「没有权限 / 被拒绝」时先画框再擦掉 —— 玩家看到的就是闪一下
+-- 现在改成等服务端 sync_mark 回来才落库、才画框：被拒绝时屏幕上完全没反应
 function ISR.SetClientSlotMark(slot, prefab)
     local container_inst = ISR.GetContainerInstForSlot(slot)
     local guid = ISR.GetClientContainerGUID(container_inst)
@@ -471,8 +471,8 @@ function ISR.ApplySyncedClientSlotMark(container_inst, slotnum, prefab, play_cle
     return true
 end
 
--- 把「这一格现在装的东西」固定下来：不用手持物品，草、树枝等资源同样适用。
--- 同一格再固定一次视为取消。
+-- 把「这一格现在装的东西」固定下来：不用手持物品，草、树枝等资源同样适用
+-- 同一格再固定一次视为取消
 function ISR.PinClientSlotMark(slot)
     if slot == nil or slot.num == nil or slot.container == nil then
         return false
@@ -499,8 +499,8 @@ function ISR.PinClientSlotMark(slot)
         return false
     end
 
-    -- 不在这里画框、不在这里播音：等服务端确认（sync_mark）再一起做。
-    -- 没有权限时服务端不会推任何东西，玩家看到的就是「按了没反应」，而不是闪一下。
+    -- 不在这里画框、不在这里播音：等服务端确认（sync_mark）再一起做
+    -- 没有权限时服务端不会推任何东西，玩家看到的就是「按了没反应」，而不是闪一下
     ISR.Log("PinClientSlotMark requested", "slot", tostring(slot.num), "prefab", tostring(key))
     return true
 end
@@ -511,7 +511,7 @@ function ISR.ClearClientSlotMark(slot)
         return false
     end
 
-    -- 同固定：不预先擦框、不预先播音，等服务端确认（sync_mark 带 nil）再做。
+    -- 同固定：不预先擦框、不预先播音，等服务端确认（sync_mark 带 nil）再做
     ISR.Log("ClearClientSlotMark requested", "slot", tostring(slot.num))
     return true
 end
@@ -575,7 +575,7 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_SET_MARK, function(player, container
     local adapter = ISR.GetStorageAdapter(container, container_inst == player and "inventory" or nil)
     local slot_count = adapter ~= nil and adapter:GetSlotCount(container) or 0
     -- 归属判定之外再放一条：容器此刻正被这名玩家打开。切斯特没眼骨时不跟随任何人，
-    -- 组件语义判不出归属，但打开它的人显然就是使用者。
+    -- 组件语义判不出归属，但打开它的人显然就是使用者
     local opened_here = container ~= nil
         and container.IsOpenedBy ~= nil
         and container:IsOpenedBy(player) == true
@@ -606,8 +606,8 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_SET_MARK, function(player, container
     end
 
     -- 独占模式（container_sharing = exclusive）：这只容器已经记在别人名下就不许动 ——
-    -- 固定、修改、清除一律拒绝，并回推 nil（他本来也不该看见别人的框）。
-    -- 共享模式（默认）下没有任何按 userid 的拦截，谁能打开谁就能固定 / 改 / 清。
+    -- 固定、修改、清除一律拒绝，并回推 nil（他本来也不该看见别人的框）
+    -- 共享模式（默认）下没有任何按 userid 的拦截，谁能打开谁就能固定 / 改 / 清
     if not ISR.AreContainerMarksShared() then
         local owner_userid = store.GetOwner ~= nil and store:GetOwner() or nil
         if owner_userid ~= nil
@@ -633,13 +633,13 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_SET_MARK, function(player, container
     end
 
     -- 第一个在这只容器落标记的人记成 owner。共享模式下它不参与判定，
-    -- 切到独占模式时直接沿用，不需要迁移存档。
+    -- 切到独占模式时直接沿用，不需要迁移存档
     if store.GetOwner ~= nil and store:GetOwner() == nil then
         store:SetOwner(player.userid)
     end
 
     -- 空格才能标记；但格子里已经放着「正是要预留的那种东西」时也允许，
-    -- 否则“V + 左键点已有物品的格子”永远会被 occupied 拒掉。
+    -- 否则“V + 左键点已有物品的格子”永远会被 occupied 拒掉
     local item_in_slot = adapter:GetItemInSlot(container, slot)
     if item_in_slot == nil or ISR.MarkMatchesItem(prefab, item_in_slot) then
         local mark = store:SetMark(slot, prefab, ISR.GetNextServerMarkOrder(player))

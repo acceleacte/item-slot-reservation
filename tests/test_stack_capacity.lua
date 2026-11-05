@@ -68,7 +68,7 @@ assert_equal(ISR.CanFullyStackIntoAvailableStorage(inventory, item), true, "stac
 overflow.slots[1] = ExistingStack(3)
 assert_equal(ISR.CanFullyStackIntoAvailableStorage(inventory, item), false, "insufficient aggregate room is rejected")
 
--- CanStackIntoInventorySlot：格中同类未满才算可用，空格不算堆叠目标。
+-- CanStackIntoInventorySlot：格中同类未满才算可用，空格不算堆叠目标
 inventory.GetItemInSlot = function(self, slot) return self.itemslots[slot] end
 
 local full_stack = { components = { stackable = { IsFull = function() return true end } } }

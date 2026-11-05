@@ -22,7 +22,7 @@ ISR =
     GetStorageAdapter = function(storage)
         return storage ~= nil and storage.adapter or nil
     end,
-    -- 真要判归属得看 owner 链，测试里用 carried 标记代替（判定本身在 test_container_range.lua）。
+    -- 真要判归属得看 owner 链，测试里用 carried 标记代替（判定本身在 test_container_range.lua）
     IsStorageCarriedByPlayer = function(owner, storage)
         return storage ~= nil and storage.carried == true
     end,

@@ -5,7 +5,7 @@
 --   * B 要看到 A 的框
 --   * B 拾取物品要回到箱子里固定的格，即使是 A 固定的
 --
--- 这里用真实的 isr_storage + isr_slotmarks 跑，只桩掉环境依赖。
+-- 这里用真实的 isr_storage + isr_slotmarks 跑，只桩掉环境依赖
 
 local function assert_equal(actual, expected, message)
     if actual ~= expected then
@@ -158,7 +158,7 @@ assert_equal(ISR.IsMarkContainerVisibleTo(bob, chest.GUID), true, "bob is a view
 assert_equal(ISR.IsMarkContainerVisibleTo(bob, backpack.GUID), false, "bob is not a viewer of alice's backpack")
 
 -- 独占模式（container_sharing = exclusive，0.1.8 新增开关）-------------------------
--- 共享是默认值；关掉共享之后，世界容器退回「第一个落标记的人独占」。
+-- 共享是默认值；关掉共享之后，世界容器退回「第一个落标记的人独占」
 ISR.Config = { container_sharing = "exclusive" }
 chest.components.isr_slotmarkstore:SetOwner("KU_alice")
 

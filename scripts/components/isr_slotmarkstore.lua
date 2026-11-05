@@ -4,7 +4,7 @@ local function ToNumber(value)
 end
 
 -- 有标记的容器要进 ISR 的注册表，否则「玩家身上有什么」枚举不到跟随型容器
--- （切斯特、哈奇）和别的模组容器。组件被 require 时 ISR 已在全局（isr_env 里挂到 GLOBAL）。
+-- （切斯特、哈奇）和别的模组容器组件被 require 时 ISR 已在全局（isr_env 里挂到 GLOBAL）
 local function TouchRegistry(inst)
     if ISR ~= nil and ISR.RegisterMarkContainer ~= nil then
         ISR.RegisterMarkContainer(inst)
@@ -17,10 +17,10 @@ local function DropRegistryIfEmpty(store)
     end
 end
 
--- 标记只有一种：把某一格固定给某个 prefab。
--- 每条标记不记名（不记谁设的）。容器上另有一个 owner 字段：第一个在这只容器落标记的
--- 玩家。共享模式（container_sharing = shared，默认）下它不参与任何判定；
--- 切到独占模式时它决定这只容器归谁。两种模式共用同一份存档，切换不需要迁移。
+-- 标记只有一种：把某一格固定给某个 prefab
+-- 每条标记不记名（不记谁设的）容器上另有一个 owner 字段：第一个在这只容器落标记的
+-- 玩家共享模式（container_sharing = shared，默认）下它不参与任何判定；
+-- 切到独占模式时它决定这只容器归谁两种模式共用同一份存档，切换不需要迁移
 local SlotMarkStore = Class(function(self, inst)
     self.inst = inst
     self.marks = {}
@@ -36,7 +36,7 @@ function SlotMarkStore:GetMarks()
     return self.marks
 end
 
--- 容器 owner：第一个在这只容器落标记的玩家 userid。只在独占模式下参与判定。
+-- 容器 owner：第一个在这只容器落标记的玩家 userid只在独占模式下参与判定
 function SlotMarkStore:GetOwner()
     return self.owner
 end
@@ -121,12 +121,12 @@ function SlotMarkStore:OnSave()
         return a.slot < b.slot
     end)
 
-    -- 不要写 add_component_if_missing。
+    -- 不要写 add_component_if_missing
     -- 引擎（entityscript.lua:1980）读到这个标记会对存档里缺组件的实体强制
     -- AddComponent，组件由本模组提供：玩家一关模组，require 抛错，异常直接打断
-    -- SpawnSaveRecord → PopulateWorld，存档再也进不去（2026-11-02 实测切斯特必崩）。
+    -- SpawnSaveRecord → PopulateWorld，存档再也进不去（2026-11-02 实测切斯特必崩）
     -- 现在改由 isr_markstores 在所有 container 实体构造时挂组件，读档时组件天然存在，
-    -- 不需要引擎补建；模组关闭时引擎找不到组件就静默跳过这份数据。
+    -- 不需要引擎补建；模组关闭时引擎找不到组件就静默跳过这份数据
     return
     {
         marks = records,
@@ -137,13 +137,13 @@ end
 
 function SlotMarkStore:OnLoad(data)
     if data == nil then
-        -- 没有存档数据（新建实体）：保留内存中的标记，不要清空。
+        -- 没有存档数据（新建实体）：保留内存中的标记，不要清空
         return
     end
 
     self.marks = {}
     self.next_order = ToNumber(data ~= nil and data.next_order) or 0
-    -- 容器 owner：独占模式用它断归属。共享模式下读进来也不参与判定，留着是为了切模式时不丢。
+    -- 容器 owner：独占模式用它断归属。共享模式下读进来也不参与判定，留着是为了切模式时不丢
     self.owner = data.owner ~= nil and tostring(data.owner) or nil
 
     for _, saved in ipairs(data ~= nil and data.marks or {}) do
@@ -154,7 +154,7 @@ function SlotMarkStore:OnLoad(data)
             prefab = saved.eslot
         end
 
-        -- 老存档里可能还带每格 owner（0.1.8 开发期间的中间格式），一律忽略：归属只按容器记。
+        -- 老存档里可能还带每格 owner（0.1.8 开发期间的中间格式），一律忽略：归属只按容器记
         if slot ~= nil and slot >= 1 and prefab ~= nil then
             self:SetMark(slot, prefab, saved.order)
         end

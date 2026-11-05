@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""把发布源同步到游戏的本地测试副本 mods/item-slot-reservation-test/。
+"""把发布源同步到游戏的本地测试副本 mods/item-slot-reservation-test/
 
 测试副本 = release/ 的全部运行文件 + modinfo 三处标识：
   * name 加 [TEST]
@@ -7,14 +7,14 @@
   * description 头部标「本地测试版」
 
 为什么要有这个脚本：手工 cp release/modinfo.lua 覆盖测试副本会把这三处标识一起抹掉，
-游戏里就出现两个同名模组条目，人和存档都分不清是哪个（2026-11-04 已踩过一次）。
+游戏里就出现两个同名模组条目，人和存档都分不清是哪个（2026-11-04 已踩过一次）
 
 用法：
     python tools/sync_test_mod.py
     python tools/sync_test_mod.py --target "D:/.../mods/item-slot-reservation-test"
     python tools/sync_test_mod.py --check-only     # 只校验，不写
 
-默认源是 ../release，默认目标是 Steam 的 mods/item-slot-reservation-test。
+默认源是 ../release，默认目标是 Steam 的 mods/item-slot-reservation-test
 """
 
 import argparse
@@ -35,7 +35,7 @@ DEFAULT_TARGET = Path(
 
 
 def build_test_modinfo(source: str) -> str:
-    """把发布版 modinfo 转成测试版：name/version/description 三处标识。"""
+    """把发布版 modinfo 转成测试版：name/version/description 三处标识"""
     out = source
 
     # name：只加一次
@@ -64,7 +64,7 @@ def build_test_modinfo(source: str) -> str:
 
 
 def check(target: Path) -> list:
-    """返回测试副本里缺失 / 不符合的项，空列表代表合格。"""
+    """返回测试副本里缺失 / 不符合的项，空列表代表合格"""
     problems = []
     modinfo = target / "modinfo.lua"
     if not modinfo.is_file():

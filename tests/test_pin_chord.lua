@@ -1,6 +1,6 @@
--- 固定手势：修饰键 + 动作键的组合判定。
+-- 固定手势：修饰键 + 动作键的组合判定
 -- 键盘动作键保持旧语义（左键固定 / 右键清除），鼠标动作键走切换语义，
--- 且鼠标模式下左右键必须放行给原版（Shift+左键是快速转移）。
+-- 且鼠标模式下左右键必须放行给原版（Shift+左键是快速转移）
 
 local function assert_equal(actual, expected, message)
     if actual ~= expected then
@@ -67,7 +67,7 @@ assert_equal(ISR.GetSlotMouseIntent(GLOBAL.MOUSEBUTTON_MIDDLE), ISR.SLOT_INTENT_
 
 -- 键盘动作键：修饰键不参与 ------------------------------------------------------
 -- 老配置（pin_key=V）升级后没有 pin_modifier 记录，会落到默认值 SHIFT；
--- 如果键盘键也要求修饰键，老玩家按 V 就没反应了。所以键盘键只看它自己。
+-- 如果键盘键也要求修饰键，老玩家按 V 就没反应了所以键盘键只看它自己
 ISR.Config = { pin_key = "V", pin_modifier = "CTRL" }
 assert_equal(ISR.IsTogglePinKey(), false, "keyboard pin keys keep the left/right click semantics")
 

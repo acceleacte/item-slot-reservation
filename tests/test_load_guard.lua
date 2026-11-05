@@ -37,7 +37,7 @@ ISR =
 dofile(ISR_TEST_ROOT.."/scripts/isr_markstores.lua")
 dofile(ISR_TEST_ROOT.."/scripts/isr_inventoryhooks.lua")
 
--- 一个可携带容器。原版 Container:OnLoad 会用存档槽位号调 GiveItem。
+-- 一个可携带容器原版 Container:OnLoad 会用存档槽位号调 GiveItem
 local container =
 {
     inst = { GUID = 500, components = { inventoryitem = {} } },

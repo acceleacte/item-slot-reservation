@@ -1,7 +1,7 @@
 ISR = ISR or {}
 
--- 随身容器最多向下几层：玩家(1) → 物品栏/装备栏里的容器(2) → 容器里的容器(3)。
--- 背包里的桶属于第 2 层，够用；再深就不展开了，避免套娃容器拖慢枚举。
+-- 随身容器最多向下几层：玩家(1) → 物品栏/装备栏里的容器(2) → 容器里的容器(3)
+-- 背包里的桶属于第 2 层，够用；再深就不展开了，避免套娃容器拖慢枚举
 ISR.PERSONAL_STORAGE_DEPTH = 3
 
 function ISR.GetContainerSlotCount(container)
@@ -53,7 +53,7 @@ end
 --   * 玩家自己
 --   * 跟随者（切斯特、哈奇、Woby 这类 follower leader 是玩家的生物容器）
 --   * 玩家正在骑的坐骑
--- 这样新容器、别的模组容器都不用逐个登记。
+-- 这样新容器、别的模组容器都不用逐个登记
 function ISR.IsEntityOwnedByPlayer(player, inst)
     if player == nil or inst == nil then
         return false
@@ -82,11 +82,11 @@ function ISR.IsEntityOwnedByPlayer(player, inst)
     return false
 end
 
--- 多人共享的世界容器：箱子、无主的切斯特/哈奇这类「不属于任何人的随身物品」的容器。
--- 这些容器上的标记对所有人可见、可用（谁拾取都回这个格）。
--- 别人的背包不共享：带 inventoryitem 主人链的一律不算 —— 否则 B 的东西会被路由进 A 的背包。
--- 跟着别人跑的切斯特/哈奇也不算：那是主人的容器。
--- 独占模式（container_sharing = exclusive）下没有任何共享容器，全部按主人算。
+-- 多人共享的世界容器：箱子、无主的切斯特/哈奇这类「不属于任何人的随身物品」的容器
+-- 这些容器上的标记对所有人可见、可用（谁拾取都回这个格）
+-- 别人的背包不共享：带 inventoryitem 主人链的一律不算 —— 否则 B 的东西会被路由进 A 的背包
+-- 跟着别人跑的切斯特/哈奇也不算：那是主人的容器
+-- 独占模式（container_sharing = exclusive）下没有任何共享容器，全部按主人算
 function ISR.IsSharedMarkContainer(player, inst)
     if not ISR.AreContainerMarksShared() then
         return false
@@ -109,7 +109,7 @@ function ISR.IsSharedMarkContainer(player, inst)
     local follower = inst.components.follower
     if follower ~= nil then
         local leader = follower.GetLeader ~= nil and follower:GetLeader() or follower.leader
-        -- player 为 nil 时只问「是不是世界容器」，不判跟随关系（广播用）。
+        -- player 为 nil 时只问「是不是世界容器」，不判跟随关系（广播用）
         if leader ~= nil and player ~= nil and leader ~= player then
             return false
         end
@@ -119,8 +119,8 @@ function ISR.IsSharedMarkContainer(player, inst)
 end
 
 -- 可标记的容器：玩家自己，以及随身携带的容器（物品栏、装备栏、背包这类
--- 随身容器里的容器、跟随者身上的容器）。共享的世界容器（基地箱子）谁都能标记，
--- 单格归属由 RPC 另判。地上别人的背包不算。
+-- 随身容器里的容器、跟随者身上的容器）共享的世界容器（基地箱子）谁都能标记，
+-- 单格归属由 RPC 另判地上别人的背包不算
 function ISR.IsMarkableContainerForPlayer(player, container_guid)
     if player == nil or container_guid == nil then
         return false
@@ -133,16 +133,16 @@ function ISR.IsMarkableContainerForPlayer(player, container_guid)
         or ISR.IsSharedMarkContainer(player, container_inst)
 end
 
--- 容器实体归属：先看「这是不是这名玩家的随身容器」，独占模式再看容器上记的 owner。
+-- 容器实体归属：先看「这是不是这名玩家的随身容器」，独占模式再看容器上记的 owner
 -- 共享模式（默认）下 mark store 的 owner 不参与任何判定 —— 世界容器由
--- ISR.IsSharedMarkContainer 放行，别人的容器一律不算。
+-- ISR.IsSharedMarkContainer 放行，别人的容器一律不算
 function ISR.IsStorageOwnedByPlayer(player, inst)
     if player == nil or inst == nil then
         return false
     end
 
     -- 独占模式：容器上记的 owner 就是这只容器的主人。世界容器（基地箱子、无主切斯特）
-    -- 没有 inventoryitem 主人链，只能靠这个字段判。
+    -- 没有 inventoryitem 主人链，只能靠这个字段判
     if not ISR.AreContainerMarksShared() then
         local store = inst.components ~= nil and inst.components.isr_slotmarkstore or nil
         local owner_userid = store ~= nil and store.GetOwner ~= nil and store:GetOwner() or nil
@@ -164,9 +164,9 @@ function ISR.IsStorageOwnedByPlayer(player, inst)
     return ISR.IsEntityOwnedByPlayer(player, inst)
 end
 
--- 自动落进容器要有距离限制，否则站在地图另一头也能把东西送进基地箱子。
+-- 自动落进容器要有距离限制，否则站在地图另一头也能把东西送进基地箱子
 -- 随身携带的容器（物品栏、装备栏、背包里、背包里的桶）永远算在手边；
--- 世界里的容器（地上的箱子、跟随中的切斯特/哈奇）按玩家到它的距离算。
+-- 世界里的容器（地上的箱子、跟随中的切斯特/哈奇）按玩家到它的距离算
 function ISR.GetContainerRangeLimit()
     local key = ISR.Config ~= nil and ISR.Config.container_range or nil
     local limits = ISR.ContainerRangeLimits or {}
@@ -184,7 +184,7 @@ local function GetWorldDistance(a, b)
     return math.sqrt(dx * dx + dz * dz)
 end
 
--- 容器的宿主：装着它的物品栏 / 容器实体。世界里的箱子、跟随中的切斯特没有宿主。
+-- 容器的宿主：装着它的物品栏 / 容器实体世界里的箱子、跟随中的切斯特没有宿主
 local function GetStorageHolder(storage)
     local inst = storage ~= nil and (storage.inst or storage) or nil
     local inventoryitem = inst ~= nil and inst.components ~= nil and inst.components.inventoryitem or nil
@@ -195,8 +195,8 @@ local function GetStorageHolder(storage)
     return inventoryitem.GetGrandOwner ~= nil and inventoryitem:GetGrandOwner() or inventoryitem.owner
 end
 
--- 容器是否挂在玩家身上（物品栏、装备栏、背包里的桶……）。
--- 只看 owner 链：世界里的箱子、跟随中的切斯特/哈奇都不算 —— 它们按距离判。
+-- 容器是否挂在玩家身上（物品栏、装备栏、背包里的桶……）
+-- 只看 owner 链：世界里的箱子、跟随中的切斯特/哈奇都不算 —— 它们按距离判
 function ISR.IsStorageCarriedByPlayer(owner, storage)
     if owner == nil or storage == nil then
         return false
@@ -207,7 +207,7 @@ function ISR.IsStorageCarriedByPlayer(owner, storage)
 end
 
 -- 故意不做距离缓存：玩家和锚点容器都在动，缓存要跟着每帧失效，
--- 失效判断的成本比直接量一次距离还高（两次 GetWorldPosition + 一次 sqrt）。
+-- 失效判断的成本比直接量一次距离还高（两次 GetWorldPosition + 一次 sqrt）
 function ISR.IsStorageWithinRange(owner, storage, limit)
     if owner == nil or storage == nil then
         return true
@@ -232,7 +232,7 @@ function ISR.IsStorageWithinRange(owner, storage, limit)
 end
 
 -- 客户端侧的同一判定：客户端没有 owner 网络字段，只能看 follower / 骑乘，
--- 加上物品栏一层和已打开容器的 replica 树。
+-- 加上物品栏一层和已打开容器的 replica 树
 local function IsClientEntityOwnedByPlayer(player, inst)
     if player == nil or inst == nil then
         return false
@@ -256,8 +256,8 @@ local function IsClientEntityOwnedByPlayer(player, inst)
     return false
 end
 
--- 客户端侧的同一判定：没有服务端组件，只能顺着 replica 的容器树找。
--- 只有玩家打开过的容器才有 classified 数据，够用 —— 要标记的时候容器本来就是开着的。
+-- 客户端侧的同一判定：没有服务端组件，只能顺着 replica 的容器树找
+-- 只有玩家打开过的容器才有 classified 数据，够用 —— 要标记的时候容器本来就是开着的
 local function ReplicaContainerHolds(container_inst, target, depth)
     local replica = container_inst ~= nil and container_inst.replica or nil
     local container = replica ~= nil and replica.container or nil
@@ -280,8 +280,8 @@ local function ReplicaContainerHolds(container_inst, target, depth)
     return false
 end
 
--- 容器是否有打开中的数据：客户端只对「玩家自己打开的容器」拿到 classified。
--- 用它做最后一道放行，剩下的交给服务端裁决（拒绝时会回推真实状态）。
+-- 容器是否有打开中的数据：客户端只对「玩家自己打开的容器」拿到 classified
+-- 用它做最后一道放行，剩下的交给服务端裁决（拒绝时会回推真实状态）
 local function ClientContainerSlotCount(container_inst)
     local replica = container_inst ~= nil and container_inst.replica or nil
     local container = replica ~= nil and replica.container or nil
@@ -328,7 +328,7 @@ function ISR.IsClientMarkableContainerInst(container_inst)
     end
 
     -- 兜底：inventoryitem 的 replica 不带 owner，客户端拼不出完整的归属链
-    -- （例如切斯特身上的背包）。只要容器正开着就先放行，由服务端最终裁决。
+    -- （例如切斯特身上的背包）。只要容器正开着就先放行，由服务端最终裁决
     return ClientContainerSlotCount(container_inst) > 0
 end
 
@@ -467,7 +467,7 @@ ISR.RegisterStorageAdapter("inventory",
         end
         return storage:GetItemInSlot(slot) == nil and storage:CanTakeItemInSlot(item, slot)
     end,
-    -- 能放进这一格：空格，或者同类未满堆叠（拾取同种资源时要并进固定格里那堆）。
+    -- 能放进这一格：空格，或者同类未满堆叠（拾取同种资源时要并进固定格里那堆）
     CanUseSlot = function(_, storage, item, slot)
         if ISR.CanUseInventorySlot ~= nil then
             return ISR.CanUseInventorySlot(storage, item, slot)
@@ -510,7 +510,7 @@ ISR.RegisterStorageAdapter("container",
         end
         return storage:GetItemInSlot(slot) == nil and storage:CanTakeItemInSlot(item, slot)
     end,
-    -- 能放进这一格：空格，或者同类未满堆叠（草、树枝这类资源要并进固定格里那堆）。
+    -- 能放进这一格：空格，或者同类未满堆叠（草、树枝这类资源要并进固定格里那堆）
     CanUseSlot = function(_, storage, item, slot)
         if ISR.CanUseContainerSlot ~= nil then
             return ISR.CanUseContainerSlot(storage, item, slot)

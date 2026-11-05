@@ -30,12 +30,12 @@ ISR.SlotMouseButtons =
 {
     LEFT = ISR.GetGlobalValue("MOUSEBUTTON_LEFT", 1000),
     CLEAR = ISR.GetGlobalValue("MOUSEBUTTON_RIGHT", 1001),
-    -- 中键：原版脚本除 constants.lua 的定义外零引用，没有默认绑定，可安全接管。
+    -- 中键：原版脚本除 constants.lua 的定义外零引用，没有默认绑定，可安全接管
     MIDDLE = ISR.GetGlobalValue("MOUSEBUTTON_MIDDLE", 1002),
 }
 
 -- 同一次点击可能同时走鼠标事件(OnMouseButton)和控制事件(OnControl)，两边的编码不同：
--- 鼠标给 MOUSEBUTTON_*，控制给 CONTROL_PRIMARY / CONTROL_ACCEPT / CONTROL_SECONDARY。
+-- 鼠标给 MOUSEBUTTON_*，控制给 CONTROL_PRIMARY / CONTROL_ACCEPT / CONTROL_SECONDARY
 ISR.SlotControlButtons =
 {
     PRIMARY = ISR.GetGlobalValue("CONTROL_PRIMARY", 0),
@@ -70,7 +70,7 @@ ISR.SlotDisplayControls =
 ISR.SLOT_INTENT_PIN = "pin_mark"
 ISR.SLOT_INTENT_CLEAR = "clear_mark"
 
--- 固定动作键。两类语义：
+-- 固定动作键两类语义：
 --   键盘键 → 按住（可叠加修饰键）点左键=固定、右键=清除，老打法不变
 --   鼠标键 → 按住修饰键单击=切换（有标记则清除），左右键完全不参与
 ISR.PinKeys =
@@ -100,8 +100,8 @@ ISR.PinMouseKeys =
     RIGHT = true,
 }
 
--- 修饰键用合成键码（KEY_SHIFT = 402，不是左右物理键）。
--- 原版调试键也是这么判的：scripts/debugkeys.lua:431 `TheInput:IsKeyDown(KEY_SHIFT)`。
+-- 修饰键用合成键码（KEY_SHIFT = 402，不是左右物理键）
+-- 原版调试键也是这么判的：scripts/debugkeys.lua:431 `TheInput:IsKeyDown(KEY_SHIFT)`
 ISR.PinModifierKeys =
 {
     SHIFT = ISR.GetGlobalValue("KEY_SHIFT", 402),
@@ -141,7 +141,7 @@ ISR.ValidPinModifierOptions =
     ALT = true,
 }
 
--- 早期版本用过单选的 "SHIFT_MIDDLE"，归一化成「修饰键 SHIFT + 动作键中键」。
+-- 早期版本用过单选的 "SHIFT_MIDDLE"，归一化成「修饰键 SHIFT + 动作键中键」
 function ISR.GetPinChord()
     local config = ISR.Config or {}
     local key = config.pin_key
@@ -154,15 +154,15 @@ function ISR.GetPinChord()
     return key, modifier
 end
 
--- 鼠标动作键走「切换」语义：同一个键既固定又清除。
+-- 鼠标动作键走「切换」语义：同一个键既固定又清除
 function ISR.IsTogglePinKey()
     local key = ISR.GetPinChord()
     return ISR.PinMouseKeys[key] == true
 end
 
--- 自动落进容器的距离上限（世界单位，4 = 一格地皮）。
+-- 自动落进容器的距离上限（世界单位，4 = 一格地皮）
 -- 玩家身上的容器不受限制；世界里的容器按这个距离算，免得站在地图另一头
--- 也能把东西直接送进基地箱子。
+-- 也能把东西直接送进基地箱子
 ISR.ContainerRangeLimits =
 {
     near = 10,
@@ -179,24 +179,24 @@ ISR.ValidContainerRangeOptions =
 
 -- 世界容器（基地箱子、无主切斯特）的标记归属：
 --   shared    （默认）不记名，谁能打开这只容器谁就能固定 / 改 / 清，所有人都看得见；
---   exclusive 第一个在这只容器落标记的人独占，别人看不到也动不了。
+--   exclusive 第一个在这只容器落标记的人独占，别人看不到也动不了
 ISR.ValidContainerSharingOptions =
 {
     shared = true,
     exclusive = true,
 }
 
--- 世界容器的标记是否共享（配置项 container_sharing，默认 shared）。
+-- 世界容器的标记是否共享（配置项 container_sharing，默认 shared）
 -- shared：容器不记名，谁能打开谁就能固定 / 改 / 清，所有人都看得见；
--- exclusive：退回「第一个在这只容器落标记的人独占」，别人看不到也动不了。
--- 配置缺失（测试桩、老存档、还没读 modinfo）时按共享处理。
--- 放在 env 里是因为 isr_slotmarks 也会用到，而部分测试桩只加载 env + 单个模块。
+-- exclusive：退回「第一个在这只容器落标记的人独占」，别人看不到也动不了
+-- 配置缺失（测试桩、老存档、还没读 modinfo）时按共享处理
+-- 放在 env 里是因为 isr_slotmarks 也会用到，而部分测试桩只加载 env + 单个模块
 function ISR.AreContainerMarksShared()
     return ISR.Config == nil or ISR.Config.container_sharing ~= "exclusive"
 end
 
 -- 合成提示音（dontstarve/HUD/recipe_ready）的处理方式：
---   original 保持原版；borrow 只在借料点亮配方时静音（默认）；silent 全部关掉。
+--   original 保持原版；borrow 只在借料点亮配方时静音（默认）；silent 全部关掉
 ISR.ValidCraftPingOptions =
 {
     original = true,
@@ -273,16 +273,16 @@ function ISR.IsChineseLocale()
         or string.find(code, "chinese", 1, true) ~= nil
 end
 
--- 「语言」设置项的取值。设置项本身的文案固定中文（modinfo 里的 label 由引擎当字符串渲染，
--- 没法按语言取表），所以这一项只决定游戏内提示文字（悬停提示、手势文案）用哪种语言。
+-- 「语言」设置项的取值设置项本身的文案固定中文（modinfo 里的 label 由引擎当字符串渲染，
+-- 没法按语言取表），所以这一项只决定游戏内提示文字（悬停提示、手势文案）用哪种语言
 ISR.ValidLanguageOptions =
 {
     zh = true,
     en = true,
 }
 
--- 语言：优先用设置项，没配或值非法时跟随游戏语言。
--- isr_env 先于 isr_config 加载，所以这里必须容忍 ISR.Config 还不存在。
+-- 语言：优先用设置项，没配或值非法时跟随游戏语言
+-- isr_env 先于 isr_config 加载，所以这里必须容忍 ISR.Config 还不存在
 function ISR.GetLanguageMode()
     local config = ISR.Config
     local mode = config ~= nil and config.language or nil
@@ -336,7 +336,7 @@ function ISR.IsPinModifierDown()
         and input:IsKeyDown(modifier_code)
 end
 
--- 键盘动作键是否按住。鼠标动作键不看这个：它在点击事件里用 button 判。
+-- 键盘动作键是否按住鼠标动作键不看这个：它在点击事件里用 button 判
 function ISR.IsPinKeyDown()
     local key = ISR.GetPinChord()
     if key == nil or key == "NONE" or ISR.PinMouseKeys[key] then
@@ -351,8 +351,8 @@ function ISR.IsPinKeyDown()
         and input:IsKeyDown(keycode)
 end
 
--- 「现在是否按住了固定手势」：悬停提示与拦截共用。
--- 鼠标动作键看修饰键；键盘动作键只看它自己。
+-- 「现在是否按住了固定手势」：悬停提示与拦截共用
+-- 鼠标动作键看修饰键；键盘动作键只看它自己
 function ISR.IsPinKeyPressed()
     local key = ISR.GetPinChord()
     if key == nil or key == "NONE" then
@@ -366,11 +366,11 @@ function ISR.IsPinKeyPressed()
     return ISR.IsPinKeyDown()
 end
 
--- 唯一的接管条件：按住固定手势并点击格子。
+-- 唯一的接管条件：按住固定手势并点击格子
 -- 鼠标动作键（中键/右键）：必须叠加修饰键（默认 Shift），单击即切换；
---   左/右键一律放行给原版 —— Shift+左键是原版快速转移，不能吞。
--- 键盘动作键（V…L）：本身已足够明确，不再要求修饰键。
---   这条是为了老配置（pin_key=V、升级后没有 pin_modifier 记录）升级后按 V 仍然可用。
+--   左/右键一律放行给原版 —— Shift+左键是原版快速转移，不能吞
+-- 键盘动作键（V…L）：本身已足够明确，不再要求修饰键
+--   这条是为了老配置（pin_key=V、升级后没有 pin_modifier 记录）升级后按 V 仍然可用
 function ISR.GetSlotMouseIntent(button)
     local normalized = ISR.NormalizeSlotButton(button)
     if normalized == nil then
@@ -397,7 +397,7 @@ function ISR.GetSlotMouseIntent(button)
     return normalized == ISR.SlotMouseButtons.LEFT and ISR.SLOT_INTENT_PIN or ISR.SLOT_INTENT_CLEAR
 end
 
--- 悬停提示里的手势文案：「Shift + 中键」「V + Left Mouse」。
+-- 悬停提示里的手势文案：「Shift + 中键」「V + Left Mouse」
 function ISR.GetPinChordLabel(kind)
     local key, modifier = ISR.GetPinChord()
     if key == nil or key == "NONE" then
@@ -423,7 +423,7 @@ function ISR.GetPinChordLabel(kind)
     return table.concat(parts, " + ")
 end
 
--- 标记键就是物品 prefab：小写、去掉 .tex 后缀。
+-- 标记键就是物品 prefab：小写、去掉 .tex 后缀
 function ISR.NormalizePrefabKey(value)
     if value == nil then
         return nil

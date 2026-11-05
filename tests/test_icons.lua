@@ -122,7 +122,7 @@ ISR.ClearSlotBorder(slot)
 assert_equal(slot._isr_slot_border.shown, false, "border is hidden on clear")
 
 -- 尺寸没变就不重复 SetSize：OnUpdate 每帧都会走 RefreshSlotBorderLayout，
--- 每次都设一遍等于每帧触发一次 UI 布局重算。
+-- 每次都设一遍等于每帧触发一次 UI 布局重算
 ISR.ApplySlotBorder(slot)
 local border_size_calls = slot._isr_slot_border.size_calls
 local icon_size_calls = slot._isr_slot_icon.size_calls

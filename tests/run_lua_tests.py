@@ -3,7 +3,7 @@ import os
 import sys
 
 
-# lupa 不在仓库里。按优先级找：环境变量 → 仓库内 → 工作区级（仓库的父目录）。
+# lupa 不在仓库里。按优先级找：环境变量 → 仓库内 → 工作区级（仓库的父目录）
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CANDIDATES = [
     os.environ.get("ISR_LUPA_PATH"),
@@ -16,7 +16,7 @@ for candidate in CANDIDATES:
         break
 else:
     sys.exit(
-        "找不到 lupa。pip install lupa，或设 ISR_LUPA_PATH 指向 lupa 所在目录。\n"
+        "找不到 lupa。pip install lupa，或设 ISR_LUPA_PATH 指向 lupa 所在目录\n"
         "已尝试：" + ", ".join(str(c) for c in CANDIDATES)
     )
 

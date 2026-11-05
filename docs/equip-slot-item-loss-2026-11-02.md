@@ -8,12 +8,12 @@
 
 ## 0. 结论（先行）
 
-1. **ISR 不删除物品（高）**。整个发布目录没有一处 `item:Remove()`，不 hook `Inventory:Equip/Unequip/DropItem`，也不接管装备槽 widget。它能做的只有"搬运"，而每次搬运都在 `GiveItem` 里留日志（§4.3）。
+1. **ISR 不删除物品（高）**。整个发布目录没有一处 `item:Remove()`，不 hook `Inventory:Equip/Unequip/DropItem`，也不接管装备槽 widget。它能做的只有"搬运"，而每次搬运都在 `GiveItem` 里留日志（§4.3）
 2. **能造成"真丢"的代码路径只有两条，都在装备栏模组侧（高）**：
-   - **P1 孤儿装备槽**：物品仍在 `inventory.equipslots[旧键]`，但该键已不在 `EQUIPSLOTS` 的值集合里 → HUD 不再绘制该槽 → 玩家看到"装备空了"。此时存档仍带着它（不是真丢），但背包容器同时从 `GetOverflowContainer()` 消失，包里的东西一起"不见"。
-   - **P2 顶替装备时掉落**：`Inventory:Equip` 顶掉同槽旧装备，旧装备是背包时走 `DropItem`（原版 `components/inventory.lua:1352-1354`，因为 `cangoincontainer=false` 走不了 `GiveItem`）。读档瞬间玩家坐标未就绪，掉落点是 `(0,0)` 或未加载区域 → 真丢。
-3. **这两个装备栏模组不会"互相打架"，而是互相踢掉（高）**：`workshop-3173431824` 的 `scripts/modconfig.lua:43` 检测到 `EQUIPSLOTS.BACK/NECK` 已存在就 `return nil` 整体退出；`workshop-375850593` 的 `priority = 10` 高于它的 `0`，而引擎按 priority **降序**加载（`scripts/mods.lua:518` 的 `return apriority > bpriority`）。所以同时订阅时 **375850593 先加载、把 3173431824 顶掉**。玩家以为在用「四五六格」，实际跑的是「五格」。
-4. **玩家点名的「EquipAutoRepair」不存在（高）**。本机 `mods/` 与工坊缓存 47 个模组的 `modinfo.lua` 里没有任何叫这个名字的；`repair` 字样只出现在 3173431824 的 `compat.lua` 注释里。玩家实际指的就是 §1 表中这两/三个。
+   - **P1 孤儿装备槽**：物品仍在 `inventory.equipslots[旧键]`，但该键已不在 `EQUIPSLOTS` 的值集合里 → HUD 不再绘制该槽 → 玩家看到"装备空了"。此时存档仍带着它（不是真丢），但背包容器同时从 `GetOverflowContainer()` 消失，包里的东西一起"不见"
+   - **P2 顶替装备时掉落**：`Inventory:Equip` 顶掉同槽旧装备，旧装备是背包时走 `DropItem`（原版 `components/inventory.lua:1352-1354`，因为 `cangoincontainer=false` 走不了 `GiveItem`）。读档瞬间玩家坐标未就绪，掉落点是 `(0,0)` 或未加载区域 → 真丢
+3. **这两个装备栏模组不会"互相打架"，而是互相踢掉（高）**：`workshop-3173431824` 的 `scripts/modconfig.lua:43` 检测到 `EQUIPSLOTS.BACK/NECK` 已存在就 `return nil` 整体退出；`workshop-375850593` 的 `priority = 10` 高于它的 `0`，而引擎按 priority **降序**加载（`scripts/mods.lua:518` 的 `return apriority > bpriority`）。所以同时订阅时 **375850593 先加载、把 3173431824 顶掉**。玩家以为在用「四五六格」，实际跑的是「五格」
+4. **玩家点名的「EquipAutoRepair」不存在（高）**。本机 `mods/` 与工坊缓存 47 个模组的 `modinfo.lua` 里没有任何叫这个名字的；`repair` 字样只出现在 3173431824 的 `compat.lua` 注释里。玩家实际指的就是 §1 表中这两/三个
 
 ---
 
@@ -26,9 +26,9 @@
 | （玩家可能同时装的）死亡不掉落 | Don't Drop Everything | `workshop-661253977` | 覆写 `Inventory:DropEverything`；无 priority（0） |
 | 本模组 | Item Slot Reservation | `workshop-3830575143` | 无 `priority`（0）；`all_clients_require_mod=true` |
 
-加载顺序（同 priority 按模组名字典序，`mods.lua:503-518`）：`375850593` → `3173431824` / `3830575143` / `661253977`。
+加载顺序（同 priority 按模组名字典序，`mods.lua:503-518`）：`375850593` → `3173431824` / `3830575143` / `661253977`
 
-**推论（高）**：只要玩家同时勾了 375850593 与 3173431824，后者一定不生效。不需要再花时间查"两个装备栏模组同时改槽"的冲突——那条路被模组自己的守卫堵死了。
+**推论（高）**：只要玩家同时勾了 375850593 与 3173431824，后者一定不生效。不需要再花时间查"两个装备栏模组同时改槽"的冲突——那条路被模组自己的守卫堵死了
 
 ---
 
@@ -81,9 +81,9 @@ end
 
 `compat.lua:473` 的原始注释直接描述了玩家这次的现象：
 
-> 模组更新改变了某些装备的匹配槽位、或从别的装备栏模组切换过来时，读档瞬间可能出现"两个装备争同一个槽位"，原版会把被挤出的装备直接 DropItem——此时玩家坐标还没加载好，掉落会落在地图原点(0,0)甚至看起来像消失。
+> 模组更新改变了某些装备的匹配槽位、或从别的装备栏模组切换过来时，读档瞬间可能出现"两个装备争同一个槽位"，原版会把被挤出的装备直接 DropItem——此时玩家坐标还没加载好，掉落会落在地图原点(0,0)甚至看起来像消失
 
-**这就是 P2 的官方确认版**。375850593 没有这段。
+**这就是 P2 的官方确认版**。375850593 没有这段
 
 ### 3.3 `workshop-661253977` Don't Drop Everything
 
@@ -94,7 +94,7 @@ end
 | 第三个循环 `if v == nil` 恒真 | `modmain.lua:65-69` | `nillots` 恒加 `maxslots` → 后面"保底丢一格"永不执行 |
 | 装备循环按 `HasTag("backpack")` 保留背包，其余装备 `DropItem` | `modmain.lua:78-93` | 死亡时护符/护甲/工具掉在地上，背包保留 |
 
-**判定（高）**：DDE 不会让物品凭空消失。它的实际效果是"物品栏全留下 + 装备全掉地上 + 背包内容随机掉一部分"。护符掉在地上没人捡 → 玩家视角就是"护符不见了"。这属于**误导性现象**，不是删除。
+**判定（高）**：DDE 不会让物品凭空消失。它的实际效果是"物品栏全留下 + 装备全掉地上 + 背包内容随机掉一部分"。护符掉在地上没人捡 → 玩家视角就是"护符不见了"。这属于**误导性现象**，不是删除
 
 ---
 
@@ -110,32 +110,32 @@ end
 | `inventory.OnLoad`（标记备份恢复） | `scripts/isr_persistence.lua:123-138` |
 | `inventory_classified.ReceiveItem`（客户端预测） | `scripts/isr_clientpredict.lua:265` |
 
-**没有** `Equip`、`Unequip`、`DropItem`、`equipslots` 写入、装备槽 widget 接管。`ISR.IsClientMarkableSlot` 对装备槽恒返回假（`isr_storage.lua:294-298`：装备槽 widget 的 `container` 为 nil）。
+**没有** `Equip`、`Unequip`、`DropItem`、`equipslots` 写入、装备槽 widget 接管。`ISR.IsClientMarkableSlot` 对装备槽恒返回假（`isr_storage.lua:294-298`：装备槽 widget 的 `container` 为 nil）
 
 ### 4.2 三处真实交叉
 
-1. **溢出落点语义被 EES 改写（中）**。ISR 多处把 `inventory:GetOverflowContainer()` 当"最后兜底落点"（`isr_inventoryhooks.lua:154`、`isr_candidates.lua:242`、`276`）。EES 把它的返回值从"身上穿的容器"改成"BACK 槽的背包"。结果：ISR 认为的兜底和原版认为的兜底是同一个容器，**但客户端 EES 只改了 classified 版**（`modmain.lua:264-271`，仅 `not IsServer`）。主机 сам 开服时两端行为不一致的概率低，但专用服务器 + 客户端两侧若加载顺序不同，会出现"预测进背包、服务端进物品栏"的一帧错位——只影响落点，不影响存亡。
+1. **溢出落点语义被 EES 改写（中）**。ISR 多处把 `inventory:GetOverflowContainer()` 当"最后兜底落点"（`isr_inventoryhooks.lua:154`、`isr_candidates.lua:242`、`276`）。EES 把它的返回值从"身上穿的容器"改成"BACK 槽的背包"。结果：ISR 认为的兜底和原版认为的兜底是同一个容器，**但客户端 EES 只改了 classified 版**（`modmain.lua:264-271`，仅 `not IsServer`）。主机 сам 开服时两端行为不一致的概率低，但专用服务器 + 客户端两侧若加载顺序不同，会出现"预测进背包、服务端进物品栏"的一帧错位——只影响落点，不影响存亡
 2. **`TryGiveItemToContainer` 会 `Unequip` 且丢弃返回值（中）**。`isr_inventoryhooks.lua:15-20`：物品若要被放进容器而它当前在装备栏里，先 `inventory:Unequip(slot)`；随后 `OnPickup` → `container:GiveItem(..., false)`；**两步都失败时函数返回 false，物品停留在"已摘下、无任何容器归属"的状态**（`:26-31`）。调用方 `TryPlaceByMarks` 只会记一条 skip 继续找下一个标记格；全部失败后：
    - 从 `Inventory:GiveItem` 进来 → `return false` 给原版，原版多数路径会回滚；
-   - 从 `Container:MoveItemFromAllOfSlot` 进来 → 原版有回滚（`container.lua:1377-1379`）。
+   - 从 `Container:MoveItemFromAllOfSlot` 进来 → 原版有回滚（`container.lua:1377-1379`）
    
-   这是**唯一一条能把物品留在 limbo 的 ISR 路径**，触发条件苛刻（背包类物品进不了容器，`CanUseContainerSlot` 会先挡掉；只有护符/工具这类 `cangoincontainer=true` 的装备可能命中）。
-3. **容器 `GiveItem` 在"预留树满"时 `return false`（中）**。`isr_inventoryhooks.lua:235-254`：目标容器有预留格、但没有未标记空位时直接拒绝。带 `drop_on_fail=false` 的调用方（例如 `Container:MoveItemFromAllOfSlot`）不会把物品掉地上，而是塞回源容器——**不会丢，但会让玩家觉得"操作被吞"**。
+   这是**唯一一条能把物品留在 limbo 的 ISR 路径**，触发条件苛刻（背包类物品进不了容器，`CanUseContainerSlot` 会先挡掉；只有护符/工具这类 `cangoincontainer=true` 的装备可能命中）
+3. **容器 `GiveItem` 在"预留树满"时 `return false`（中）**。`isr_inventoryhooks.lua:235-254`：目标容器有预留格、但没有未标记空位时直接拒绝。带 `drop_on_fail=false` 的调用方（例如 `Container:MoveItemFromAllOfSlot`）不会把物品掉地上，而是塞回源容器——**不会丢，但会让玩家觉得"操作被吞"**
 
 ### 4.3 一条可直接用的证伪判据（高）
 
-`ISR` 的 `Inventory:GiveItem` 包装**每条都无条件调用** `ISR.Log("Inv give", ...)`（`isr_inventoryhooks.lua:147-158`）。
+`ISR` 的 `Inventory:GiveItem` 包装**每条都无条件调用** `ISR.Log("Inv give", ...)`（`isr_inventoryhooks.lua:147-158`）
 
 → 打开 modinfo 里的「调试日志」，在丢失时间点前后抓 `master_server_log.txt`：
 
 - 有该物品的 `Inv give` 记录且后续没有对应 `itemget`/落点日志 ⇒ 物品经 ISR 改道，按 §4.2 查；
-- **完全没有** `Inv give` 记录 ⇒ 物品没走物品栏 `GiveItem` 链路，ISR 不可能是搬运者，问题在装备栏模组的 `Equip`/`DropItem` 路径。
+- **完全没有** `Inv give` 记录 ⇒ 物品没走物品栏 `GiveItem` 链路，ISR 不可能是搬运者，问题在装备栏模组的 `Equip`/`DropItem` 路径
 
 ---
 
 ## 5. 复现矩阵（给玩家跑，4 组就够）
 
-每组重复三个动作：① 穿着背包+护符死亡并复活；② 退出重进两次；③ 下地穴再上来。
+每组重复三个动作：① 穿着背包+护符死亡并复活；② 退出重进两次；③ 下地穴再上来
 
 | # | 启用 | 预期（本报告的预测） |
 |---|---|---|
@@ -146,9 +146,9 @@ end
 
 判读要点：
 
-- D 组行为 == B 组 ⇒ 证实 §0-3「互相踢掉」，不必再查双装备栏冲突。
-- B 组丢、且存档 `equip` 表里**有** `back`/`neck` 键 ⇒ §0-2 P1 隐形，按 §6.1 迁回。
-- B 组丢、存档 `equip` 表里**没有**键、地上也没有 ⇒ §0-2 P2 真丢，需要玩家回忆是否在"读档瞬间"顶替过同槽装备（换背包、换护符、装/卸装备栏模组的那一次读档）。
+- D 组行为 == B 组 ⇒ 证实 §0-3「互相踢掉」，不必再查双装备栏冲突
+- B 组丢、且存档 `equip` 表里**有** `back`/`neck` 键 ⇒ §0-2 P1 隐形，按 §6.1 迁回
+- B 组丢、存档 `equip` 表里**没有**键、地上也没有 ⇒ §0-2 P2 真丢，需要玩家回忆是否在"读档瞬间"顶替过同槽装备（换背包、换护符、装/卸装备栏模组的那一次读档）
 
 ---
 
@@ -156,9 +156,9 @@ end
 
 ### 6.1 玩家侧（立刻可做，高）
 
-1. **两个装备栏模组二选一**，且优先保留 `3173431824`（它自带 P1/P2 两个保护 + 复活恢复）。若玩家更想要 EES 的五槽布局，就必须接受"顶替同槽装备会掉地上"这个原版行为。
-2. **切换/启用装备栏模组前**，先把背包和护符脱下来放进箱子，再装模组、再读档。这一步能规避 P2 的绝大多数场景（读档瞬间没有"两件装备争同槽"）。
-3. 已经丢过的档：按 §2 的控制台代码把 `equipslots` 里非标准键的物品脱出来；真丢的按 `equip` 表缺失判断，只能回档。
+1. **两个装备栏模组二选一**，且优先保留 `3173431824`（它自带 P1/P2 两个保护 + 复活恢复）。若玩家更想要 EES 的五槽布局，就必须接受"顶替同槽装备会掉地上"这个原版行为
+2. **切换/启用装备栏模组前**，先把背包和护符脱下来放进箱子，再装模组、再读档。这一步能规避 P2 的绝大多数场景（读档瞬间没有"两件装备争同槽"）
+3. 已经丢过的档：按 §2 的控制台代码把 `equipslots` 里非标准键的物品脱出来；真丢的按 `equip` 表缺失判断，只能回档
 
 ### 6.2 EES 侧补丁思路（不建议直接改工坊模组，仅列方案）
 
@@ -197,7 +197,7 @@ end)
         return true
     end
 
-    -- 失败：物品已被摘下且不在任何容器里。塞回物品栏，塞不下才掉在脚下。
+    -- 失败：物品已被摘下且不在任何容器里。塞回物品栏，塞不下才掉在脚下
     ISR.Log("Container place failed, rollback", tostring(item.prefab))
     if not inventory:GiveItem(item, nil, src_pos) then
         inventory:DropItem(item, true, true)
@@ -215,7 +215,7 @@ end)
             end
 ```
 
-**(c) modinfo 描述里加一句兼容说明**：与改写 `EQUIPSLOTS` / 新增装备槽的模组同用时，若出现装备消失请先看本报告 §2 的隐形/真丢判定。
+**(c) modinfo 描述里加一句兼容说明**：与改写 `EQUIPSLOTS` / 新增装备槽的模组同用时，若出现装备消失请先看本报告 §2 的隐形/真丢判定
 
 ---
 
@@ -226,16 +226,16 @@ end)
 1. 丢失前后 5 分钟的 `client_log.txt` + `master_server_log.txt`（含 `[ItemSlotReservation]` 调试日志）；
 2. `Cluster_N/Master/save/session/<id>/<player_id>` 里的 `equip` 段；
 3. 当时的模组列表截图（确认 3173431824 是否真的在勾选状态）；
-4. 丢失前 5 分钟内是否做过"换背包 / 换护符 / 装或卸装备栏模组后第一次读档"。
+4. 丢失前 5 分钟内是否做过"换背包 / 换护符 / 装或卸装备栏模组后第一次读档"
 
-拿不到 1-4 也能结论：按 §5 的 B/D 两组对照，就能在玩家端把责任锁到具体模组。
+拿不到 1-4 也能结论：按 §5 的 B/D 两组对照，就能在玩家端把责任锁到具体模组
 
 ---
 
 ## 8. 追加（2026-11-03）：「护符栏整栏消失」是另一件事，已定位并修复
 
 现场数据：`client_log.txt` 00:05:15 那次会话，加载顺序是
-`item-slot-reservation-test` → `workshop-3173431824`（两者 `priority` 都是 0，按 `modinfo.name` 排）。
+`item-slot-reservation-test` → `workshop-3173431824`（两者 `priority` 都是 0，按 `modinfo.name` 排）
 
 ### 8.1 机制
 
@@ -247,12 +247,12 @@ end)
       Inv:RebuildExtraSlots(self)   -- 这里才 AddEquipSlot(护符栏)
   end
   ```
-- ISR 0.1.52 及更早用 `AddClassPostConstruct("widgets/inventorybar", ...)` 在**构造期**包 `self.Rebuild`。
-  `function self:Rebuild` 写的是**实例字段**，把当刻的类方法引用冻住了（`modutil.lua:153-158`：`_ctor` 尾部回调）。
+- ISR 0.1.52 及更早用 `AddClassPostConstruct("widgets/inventorybar", ...)` 在**构造期**包 `self.Rebuild`
+  `function self:Rebuild` 写的是**实例字段**，把当刻的类方法引用冻住了（`modutil.lua:153-158`：`_ctor` 尾部回调）
 - 于是：ISR 先加载 → 冻结的是原版方法 → 四五六格随后换掉**类**方法 → 实例字段仍指向旧方法 →
-  `RebuildExtraSlots` 永远不执行 → 护符栏画不出来。`Refresh` 同理。
-- Extra Equip Slots（`375850593`）`priority = 10`，先于 ISR 加载，所以「只装它 + ISR」不出问题。
-  这就是为什么只有一部分玩家中招 —— 取决于装备栏模组的 `priority` 与 `modinfo.name`。
+  `RebuildExtraSlots` 永远不执行 → 护符栏画不出来。`Refresh` 同理
+- Extra Equip Slots（`375850593`）`priority = 10`，先于 ISR 加载，所以「只装它 + ISR」不出问题
+  这就是为什么只有一部分玩家中招 —— 取决于装备栏模组的 `priority` 与 `modinfo.name`
 
 ### 8.2 修复（0.1.6，发布号由 0.1.53 回落）
 
@@ -268,9 +268,9 @@ if InventoryBarClass ~= nil and not InventoryBarClass._isr_class_hooked then
 end
 ```
 
-回归测试 `tests/test_inventorybar_hook.lua`：模拟「ISR 先加载 → 装备栏模组后包类方法」，断言两条链路都执行、重复加载不重复包装。全量 32 个测试文件通过。
+回归测试 `tests/test_inventorybar_hook.lua`：模拟「ISR 先加载 → 装备栏模组后包类方法」，断言两条链路都执行、重复加载不重复包装。全量 32 个测试文件通过
 
 ### 8.3 对前文的修正
 
-- 「护符栏 / 背包栏整栏消失」发生时，**装备根本没丢**：它还在 `inventory.equipslots[back|neck]`，只是 HUD 没画那个槽。属于 §0-2 的 P1 前身，且比 P1 更早、更常见。
-- §0-2 的 P2（顶替装备走 `DropItem`）与 §3.3 的 DDE 结论不变，仍是「真丢」的唯一来源。
+- 「护符栏 / 背包栏整栏消失」发生时，**装备根本没丢**：它还在 `inventory.equipslots[back|neck]`，只是 HUD 没画那个槽。属于 §0-2 的 P1 前身，且比 P1 更早、更常见
+- §0-2 的 P2（顶替装备走 `DropItem`）与 §3.3 的 DDE 结论不变，仍是「真丢」的唯一来源

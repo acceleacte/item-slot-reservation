@@ -32,8 +32,8 @@ function ISR.CanUseEmptyInventorySlot(inventory, item, slot)
         and inventory:GetItemInSlot(slot) == nil
 end
 
--- 目标格已有同类未满堆叠时也算可用。原版 GetNextAvailableSlot 先堆叠再找空格，
--- 只判断空格会让可堆叠的物品被挤出物品栏（shift 转移时表现为整单失败）。
+-- 目标格已有同类未满堆叠时也算可用原版 GetNextAvailableSlot 先堆叠再找空格，
+-- 只判断空格会让可堆叠的物品被挤出物品栏（shift 转移时表现为整单失败）
 function ISR.CanStackIntoInventorySlot(inventory, item, slot)
     if inventory == nil or item == nil or slot == nil or inventory.GetItemInSlot == nil then
         return false
@@ -52,8 +52,8 @@ function ISR.CanStackIntoInventorySlot(inventory, item, slot)
 end
 
 -- 只能放物品栏的东西：以太余烬（canonlygoinpocket）、沃拓克斯灵魂
--- （canonlygoinpocketorpocketcontainers，只认灵魂罐那种口袋容器）。它们进不了背包和箱子，
--- 预留规则必须让路：物品栏全被预留时如果还拦着，余烬会掉地上且 canbepickedup=false，直接卡死。
+-- （canonlygoinpocketorpocketcontainers，只认灵魂罐那种口袋容器）它们进不了背包和箱子，
+-- 预留规则必须让路：物品栏全被预留时如果还拦着，余烬会掉地上且 canbepickedup=false，直接卡死
 function ISR.IsPocketOnlyItem(item)
     local inventoryitem = item ~= nil and item.components ~= nil and item.components.inventoryitem or nil
     return inventoryitem ~= nil
@@ -188,7 +188,7 @@ local function CanUseUnmarkedContainerStackSlot(inventory, container, item, slot
 end
 
 -- 槽位表是 1..n 的数组，用数字索引遍历：pairs 的顺序不保证，
--- 服务端与客户端各算一遍时会挑到不同的堆叠格。
+-- 服务端与客户端各算一遍时会挑到不同的堆叠格
 local function GetFirstUnmarkedStackSlotInContainer(inventory, container, item)
     for k = 1, ISR.GetContainerSlotCount(container) do
         if CanUseUnmarkedContainerStackSlot(inventory, container, item, k) then
@@ -219,7 +219,7 @@ local function GetFirstUnmarkedStackSlotInInventory(inventory, item)
 end
 
 -- 装备栏的键是 EQUIPSLOTS 字符串（head/hands/body…），没法数字索引；
--- 可堆叠的装备极少，这里保留 pairs。
+-- 可堆叠的装备极少，这里保留 pairs
 local function GetFirstEquipStackSlot(inventory, item)
     if item.components == nil or item.components.stackable == nil then
         return nil
@@ -318,8 +318,8 @@ function ISR.GetNextUnmarkedAvailableSlot(inventory, item)
     return ISR.GetNextUnmarkedEmptySlot(inventory, item)
 end
 
--- 「这一格对本物品开放吗」：格子没有标记，或标记就是这个 prefab。
--- 走 CanItemUseStoredMark 不构造标记表 —— 这个判断在候选格搜索里是按格调的。
+-- 「这一格对本物品开放吗」：格子没有标记，或标记就是这个 prefab
+-- 走 CanItemUseStoredMark 不构造标记表 —— 这个判断在候选格搜索里是按格调的
 function ISR.CanItemUseMarkedSlot(player, container_guid, slot, item)
     if ISR.CanItemUseStoredMark ~= nil then
         return ISR.CanItemUseStoredMark(player, container_guid, slot, item)
@@ -463,7 +463,7 @@ function ISR.GetAvailableStackRoomInInventory(inventory, item)
     end
 
     -- 这一处用 pairs 就行：结果是求和，跟遍历顺序无关，
-    -- 不像下面找「第一个可落的格」那样需要确定顺序。
+    -- 不像下面找「第一个可落的格」那样需要确定顺序
     local room = 0
     for slot, other_item in pairs(inventory.itemslots or {}) do
         if other_item ~= nil

@@ -1,11 +1,11 @@
--- 刷新类钩子必须挂在 inventorybar 的**类**上，不能只包实例方法。
+-- 刷新类钩子必须挂在 inventorybar 的**类**上，不能只包实例方法
 --
 -- 复现的现场：四五六格装备栏（workshop-3173431824）用
 --     local base = Inv.Rebuild
 --     function Inv:Rebuild() base(self); ... self:AddEquipSlot(...) end
--- 往 HUD 里加护符栏。它 priority 默认 0、名字排在本模组之后，加载比本模组晚。
+-- 往 HUD 里加护符栏它 priority 默认 0、名字排在本模组之后，加载比本模组晚
 -- 本模组过去只包实例方法，构造那一刻把类方法引用冻住，四五六格后来换掉的类方法
--- 就被绕过 —— 护符栏根本画不出来。
+-- 就被绕过 —— 护符栏根本画不出来
 --
 -- 这个测试钉住三件事：
 --   1. 加载后 Inv.Rebuild / Inv.Refresh 被替换（钩子在类上）
