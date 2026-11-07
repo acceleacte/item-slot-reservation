@@ -47,37 +47,62 @@ end
 -- 收集本玩家「可借料」的容器内固定格供应：prefab -> { {item=实体, count=堆叠数}, ... }
 -- 排除三类，避免与原版统计重叠导致重复扣料：
 --   1. 玩家自己的物品栏标记（原版本就算）
---   2. 随身容器（背包、背包里的桶；背包是原版 overflow，本就参与合成）
+--   2. 装备栏背包（原版 GetOverflowContainer 已算）
 --   3. 此刻被该玩家打开的容器（原版 opencontainers 已算）
 -- 另排除 excludefromcrafting / readonlycontainer，与原版对打开容器的排除规则一致
-function ISR.GetCraftingSupply(player)
+--
+-- for_client：给客户端算可用性用的口径，打开中的容器也收进来。
+-- 服务端扣料必须排除它们（原版已经把物品填进 materials，再填一次是重复扣）；
+-- 客户端则相反：它数不到哪些打开容器完全由 replica 决定（口袋维度实体 entity:Hide()、
+-- WX 储物箱锁在物品栏格、多人共开时 classified 不发给任何人），猜不准就只能全给，
+-- 再由客户端扣掉「自己已经数到的那部分」（HasIngredientsWithClientSupply）
+function ISR.GetCraftingSupply(player, for_client)
     local supply = {}
     if player == nil or player.components == nil or player.components.inventory == nil then
         return supply
     end
 
     local limit = ISR.GetContainerRangeLimit()
+    -- 原版 Inventory:Has 只额外扫「装备栏背包」（GetOverflowContainer）和当前打开的容器。
+    -- 物品栏里的容器（WX-78 的拓展储物箱、背包里的桶）原版不算，必须由这里补上 ——
+    -- 所以排除的是 overflow 本身，不是「所有随身容器」（2026-11-07 实测：WX 储物箱不借料）
+    local inventory = player.components.inventory
+    local overflow = inventory.GetOverflowContainer ~= nil and inventory:GetOverflowContainer() or nil
+    -- 同一物理格可能挂着两套标记：切斯特实体一套（升级前落的）、口袋维度实体一套
+    -- （暗影切斯特的容器 UI 绑在它上面）。按真容器 GUID + 格号去重，别把料算两遍
+    local counted = {}
     for _, mark in pairs(ISR.GetServerMarks(player)) do
         if type(mark) == "table" and supply[mark.prefab] == nil then
             supply[mark.prefab] = {}
         end
 
         local container = ISR.GetContainerInstFromGUID(mark.container_guid)
+        -- 暗影切斯特只有 container_proxy，真容器在口袋维度实体上
+        local comp = container ~= nil and ISR.GetContainerComponent ~= nil
+            and ISR.GetContainerComponent(container)
+            or nil
         if container ~= nil
             and container ~= player
-            and container.components ~= nil
-            and container.components.container ~= nil
-            and not ISR.IsStorageCarriedByPlayer(player, container)
+            and comp ~= nil
+            and comp ~= overflow
+            and comp.canbeopened ~= false
         then
-            local comp = container.components.container
+            -- 打开中的容器：服务端口径一律排除（原版已算，再算一次就是重复扣料）；
+            -- 客户端口径全收，客户端那边负责扣掉自己已经数到的部分
             local openable_ok = not comp.excludefromcrafting and not comp.readonlycontainer
-                and not (comp.IsOpenedBy ~= nil and comp:IsOpenedBy(player))
-            if openable_ok and ISR.IsStorageWithinRange(player, container, limit) then
+                and (for_client == true
+                    or not (comp.IsOpenedBy ~= nil and comp:IsOpenedBy(player)))
+            local slot_key = tostring(comp.inst ~= nil and comp.inst.GUID or mark.container_guid)..":"..tostring(mark.slot)
+            if openable_ok
+                and not counted[slot_key]
+                and ISR.IsStorageWithinRange(player, container, limit)
+            then
                 local item = comp.GetItemInSlot ~= nil and comp:GetItemInSlot(mark.slot) or nil
                 if item ~= nil
                     and CanCraftWithItem(item)
                     and NormalizePrefab(item.prefab) == mark.prefab
                 then
+                    counted[slot_key] = true
                     table.insert(supply[mark.prefab], { item = item, count = GetStackCount(item) })
                 end
             end
@@ -327,9 +352,9 @@ local function SerializeSupply(counts)
     return table.concat(parts, ";")
 end
 
-function ISR.ComputeCraftSupply(player)
+function ISR.ComputeCraftSupply(player, for_client)
     local counts = {}
-    local supply = ISR.GetCraftingSupply(player)
+    local supply = ISR.GetCraftingSupply(player, for_client)
     for prefab, list in pairs(supply) do
         local total = SumSupply(list)
         if total > 0 then
@@ -349,7 +374,9 @@ function ISR.PushCraftingSupply(player)
         return
     end
 
-    local payload = ISR.IsCraftBorrowEnabled() and SerializeSupply(ISR.ComputeCraftSupply(player)) or ""
+    -- 客户端口径：把「打开了但客户端数不到」的那部分也推过去，
+    -- 否则开箱合成时配方全灰（关掉才亮）
+    local payload = ISR.IsCraftBorrowEnabled() and SerializeSupply(ISR.ComputeCraftSupply(player, true)) or ""
     if player._isr_craft_supply_payload == payload then
         return
     end
@@ -389,6 +416,31 @@ end
 -- 合成菜单一次重算会把每个配方缺的每种材料都过一遍，逐条打日志能刷出几千行
 -- 同一种材料每次进游戏只记一次，够定位问题，也不把日志淹掉
 local supply_short_logged = {}
+
+-- 原版 inventory:Has(..., true) 的 count 里，有一部分来自「打开着的容器」。
+-- 服务端推来的 supply 也收着同一批容器，直接相加就是重复计算（客户端高估、
+-- 点了合成被服务端拒）。这里把客户端自己已经数到的那部分减掉 ——
+-- 用的是和原版完全相同的遍历与过滤条件，两边口径才对得上
+local function CountCountedOpenContainerItems(inventory, prefab, iscrafting)
+    local total = 0
+    local containers = inventory.GetOpenContainers ~= nil and inventory:GetOpenContainers() or nil
+    local overflow = inventory.GetOverflowContainer ~= nil and inventory:GetOverflowContainer() or nil
+    for container_inst in pairs(containers or {}) do
+        local container = container_inst.replica ~= nil
+            and (container_inst.replica.container or container_inst.replica.inventory)
+            or nil
+        if container ~= nil
+            and container ~= overflow
+            and not container.excludefromcrafting
+            and (container.IsReadOnlyContainer == nil or not container:IsReadOnlyContainer())
+        then
+            local _, n = container:Has(prefab, 0, iscrafting)
+            total = total + (n or 0)
+        end
+    end
+
+    return total
+end
 
 -- 同步表里一条材料都没有的配方，结论必然和原版一样（都是不够），
 -- 不用调任何 inventory:Has菜单一次重算是几百个配方，绝大多数属于这一类
@@ -460,18 +512,24 @@ function ISR.HasIngredientsWithClientSupply(player, builder, recipe)
         if v.amount > 0 then
             local amt = math.max(1, RoundBiasedUp(v.amount * mod))
             local has, count = inventory:Has(v.type, amt, true)
-            if not has and (count or 0) + ISR.GetSyncedCraftSupply(v.type) < amt then
-                if not supply_short_logged[v.type] then
-                    supply_short_logged[v.type] = true
-                    ISR.Log(
-                        "Craft supply short",
-                        tostring(v.type),
-                        "have", tostring(count or 0),
-                        "supply", tostring(ISR.GetSyncedCraftSupply(v.type)),
-                        "need", tostring(amt)
-                    )
+            if not has then
+                local supplied = ISR.GetSyncedCraftSupply(v.type)
+                local counted = CountCountedOpenContainerItems(inventory, v.type, true)
+                local visible = math.max(0, (count or 0) - counted)
+                if visible + supplied < amt then
+                    if not supply_short_logged[v.type] then
+                        supply_short_logged[v.type] = true
+                        ISR.Log(
+                            "Craft supply short",
+                            tostring(v.type),
+                            "have", tostring(visible),
+                            "open", tostring(counted),
+                            "supply", tostring(supplied),
+                            "need", tostring(amt)
+                        )
+                    end
+                    return false
                 end
-                return false
             end
         end
     end

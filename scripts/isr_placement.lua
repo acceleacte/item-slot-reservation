@@ -187,17 +187,26 @@ function ISR.TryPlaceByMarks(context)
     local marks = ISR.GetContextMarks(context)
         or ISR.GetSortedServerMarksForPrefab(context.owner, context.item.prefab)
     for _, mark in ipairs(OrderMarksForConfig(context.owner, marks)) do
-        local matches_target = target_guid == nil or mark.container_guid == target_guid
+        -- 代理容器的两副面孔算同一个目标：标记按切斯特记、give 目标可能是口袋维度实体
+        local matches_target = target_guid == nil
+            or mark.container_guid == target_guid
+            or (ISR.IsSameStorage ~= nil and ISR.IsSameStorage(mark.container_guid, target_guid))
+        local matches_source = context.source_guid ~= nil
+            and (mark.container_guid == context.source_guid
+                or (ISR.IsSameStorage ~= nil and ISR.IsSameStorage(mark.container_guid, context.source_guid)))
         if not matches_target then
             NoteSkip(skipped, mark, "target")
-        elseif mark.container_guid == context.source_guid then
+        elseif matches_source then
             NoteSkip(skipped, mark, "source")
         else
             local storage = context.target_storage or ISR.GetStorageForMark(context.owner, mark)
             local adapter = ISR.GetStorageAdapter(storage, context.target_kind)
+            local storage_guid = adapter ~= nil and adapter:GetGUID(storage) or nil
             if adapter == nil then
                 NoteSkip(skipped, mark, "adapter")
-            elseif adapter:GetGUID(storage) ~= mark.container_guid then
+            elseif storage_guid ~= mark.container_guid
+                and not (ISR.IsSameStorage ~= nil and ISR.IsSameStorage(storage_guid, mark.container_guid))
+            then
                 NoteSkip(skipped, mark, "guid")
             elseif ISR.IsStorageWithinRange ~= nil
                 and not ISR.IsStorageWithinRange(context.owner, storage, range_limit)

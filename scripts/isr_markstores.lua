@@ -65,9 +65,24 @@ function ISR.GetSlotMarkStoreForGUID(player, container_guid, create)
         return nil
     end
 
-    return create and ISR.EnsureSlotMarkStore(inst)
-        or inst.components ~= nil and inst.components.isr_slotmarkstore
-        or nil
+    local store = inst.components ~= nil and inst.components.isr_slotmarkstore or nil
+    -- 代理容器（暗影切斯特）的标记可能落在另一副面孔上：
+    -- 打开时 UI 绑口袋维度实体、关掉后按切斯特查，两边必须互相兜底
+    if store == nil and ISR.GetProxyTwinEntity ~= nil then
+        local twin = ISR.GetProxyTwinEntity(inst)
+        local twin_store = twin ~= nil and twin.components ~= nil
+            and twin.components.isr_slotmarkstore
+            or nil
+        if twin_store ~= nil then
+            return twin_store
+        end
+    end
+
+    if store == nil and create then
+        return ISR.EnsureSlotMarkStore(inst)
+    end
+
+    return store
 end
 
 -- 随身容器实例：玩家自己 + 物品栏/装备栏里的容器 + 这些容器里的容器（背包里的桶）

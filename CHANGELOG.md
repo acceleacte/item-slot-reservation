@@ -8,6 +8,64 @@ Item Slot Reservation（物品格预留）· 工坊 ID `3830575143`
 
 ---
 
+## 0.1.83 — 2026-11-05
+
+**修复：切斯特没眼骨跟随时标记能写进去、客户端却收不到（点了没反应）**
+
+- 现象：眼骨放在地上时给切斯特的格子打标记，木框不出现、物品也不自动回位；把眼骨捡起来（切斯特恢复跟随）后同一步操作立刻正常
+- 日志证据：服务端每次点击都记录 `Server mark set container <guid> slot 4 prefab flint order 85→88`，客户端同期的 `Client mark synced` 里查不到这只容器（其它容器照常收到快照）
+- 根因：`set_slot_mark` 的 RPC 入口有「容器正被这名玩家打开就放行」这条例外，但 `ISR.IsMarkContainerVisibleTo` 与 `ISR.GetServerMarks` 只看归属判据。切斯特不跟随任何人时 `follower:GetLeader()` 为 nil / 指向旧实体，两条判据同时为假 → 变更被拦在服务端
+- 修法：抽出 `IsContainerOpenedByPlayer`，在可见性判定、标记枚举、以及 `set_slot_mark` 成功/清除后的回推都用同一判据；发起点无条件先收到自己的那份同步
+- 测试：`tests/test_shared_container.lua` 增加「跟随别人的切斯特被打开」用例，覆盖可见性、枚举与路由
+
+**修复：WX-78 拓展储物箱（以及其他随身容器）不能借料合成**
+
+- 现象：机器人的拓展储物箱里固定的材料不参与借料合成
+- 根因：借料供应把「随身容器」整类排掉了（`IsStorageCarriedByPlayer`），理由是「原版 overflow 已算」。实际上原版 `Inventory:Has` 的 overflow 只认**装备栏 BODY 背包**（`GetOverflowContainer()`），物品栏里锁着的 `wx78_inventorycontainer`、背包里的桶都不在原版统计范围内
+- 修法：排除条件改为与原版三处精确对齐 —— 玩家自己、`GetOverflowContainer()` 返回的那只、玩家正打开的容器；其余随身容器进供应。另加 `canbeopened == false` 排除（打不开就取不出来）
+- 测试：`tests/test_crafting.lua` 补「物品栏里的容器算供应」「BODY 背包不重复计入」两条
+
+**修复：切斯特升级成暗影切斯特后借料合成失效**
+
+- 现象：喂 9 个噩梦燃料把切斯特变成暗影切斯特后，固定格里的材料不再参与借料合成；标记框也可能对不上
+- 根因：原版 `chester.lua` 的 `SwitchToShadowContainerProxy` 会把切斯特的 `container` 组件整个 `RemoveComponent` 掉，物品搬进 `TheWorld:GetPocketDimensionContainer("shadow")`，实体上只剩 `container_proxy`（读档时 `OnLoadPostPass` 还会再切一次）。ISR 到处只认 `components.container`，于是借料、自动归位、共享容器判定全部拿不到容器；标记本身还留在切斯特实体上（存档已验证：`isr_slotmarkstore` 里有 `nightmarefuel` 固定在 9 格）
+- 修法：新增 `ISR.GetContainerComponent`，`container_proxy` 顺着 `GetMaster()` 解引用到真容器；存储适配器按外层实体还原 GUID；距离改用代理所有者（切斯特）而不是口袋维度实体；同一物理格被两套标记指向时按真容器 GUID + 格号去重，避免材料算两遍；清除一侧时连带清另一侧同格，避免「框擦了还在借料」
+- 雪切斯特（9 个蓝宝石）走 `SwitchToContainer`，实体上就是普通 `container` 组件，无需额外适配，本版一并加了回归用例
+- 测试：新增 `tests/test_proxy_chester.lua`（36 个用例）
+
+**修复：打开暗影切斯特时配方整片变灰，关掉才亮**
+
+- 现象：打开暗影切斯特，合成栏里用到固定格材料的配方全部变灰；把容器关掉，同一批配方立刻亮
+- 日志证据：`client_log.txt` 里容器的 cutgrass 从 supply 消失的同一秒出现 `Craft supply short cutgrass have 0 supply 0 need 1`，两秒后 supply 恢复 `cutgrass:99`；服务端 `Craft supply synced` 在开关之间来回跳
+- 根因：给客户端的供应与服务端共用一份口径，两边都把「正被玩家打开的容器」排除了，理由是原版 `opencontainers` 已经算过。服务端确实算得到，客户端不算 —— 口袋维度容器是 `entity:Hide()` 的 CLASSIFIED 实体，客户端 `GetOpenContainers()` 用 `entity:IsVisible()` 过滤，永远拿不到，`inventory:Has(..., true)` 给 0
+- 修法：供应拆两个口径。服务端扣料维持「排除所有打开容器」（原版已把它们填进 materials，再填一次就是重复扣料）；推给客户端的 `ComputeCraftSupply(player, true)` 把打开容器全收进来，再由客户端 `HasIngredientsWithClientSupply` 扣掉「自己已经数到的打开容器部分」（`CountCountedOpenContainerItems`，遍历与过滤条件照抄原版 `inventory_classified:Has`）。服务端猜不出哪台客户端数得到（口袋维度实体 `entity:Hide()`、WX 储物箱锁在物品栏格、多人共开时 `SetClassifiedTarget(nil)`），不在服务端做减法
+- 测试：`tests/test_proxy_chester.lua` 补三条（服务端口径排除、客户端口径保留、普通容器不补）
+
+**修复：暗影切斯特的标记全部判成 :range，物品进不了格子**
+
+- 现象：往暗影切斯特的固定格扔东西一律进不去（`Marked placement no hit ... skipped <guid>@<slot>:range`），借料同时为空；同一批标记时而命中时而 `:target`
+- 根因两条：
+  1. `GetProxyOwner`（口袋维度实体 → 切斯特）只在「带标记的容器注册表」里反查。容器没标记时不在注册表，反查失败 → 距离按口袋维度实体的坐标（0,0,0）算 → 永远超距
+  2. `GetGUID` 依赖 `container._isr_owner_inst`，谁最后访问谁改写：从切斯特取是切斯特 GUID、从口袋实体取又变回口袋 GUID → `Marked placement` 的目标匹配随机失败
+- 修法：`container_proxy:SetMaster` 时建立宿主映射（`ISR._proxy_hosts`），`GetProxyOwner` 先查映射再扫注册表；`GetGUID` 恒返回宿主 GUID；`GetSlotMarkStoreForGUID` 查不到 store 时回退 twin；新增 `ISR.IsSameStorage`，放置路由把两副面孔当同一个目标
+- 测试：`test_proxy_chester.lua` 补宿主映射、store 回退、同容器等价三条
+
+**修复：暗影切斯特的标记只写一侧，开关容器状态对不上**
+
+- 现象：打开暗影切斯特设的标记，关掉后借料拿不到；反过来关着时看到的标记，打开后不进供应
+- 根因：切斯特实体（带 `container_proxy`）与口袋维度实体（真容器）是同一个物理容器的两副面孔。UI 打开时槽位绑口袋实体，标记按它的 GUID 落库；关掉后枚举走切斯特实体。清除早已双向（`ClearProxyTwinMark`），设置却只写一侧
+- 修法：抽出 `GetProxyTwin`，设置与清除都双写同一份标记（共用同一个 `order`，拾取优先级一致）。twin 那条只推给「正打开它的人」—— 口袋实体是 CLASSIFIED 的，别人没有副本，广播会打到空目标
+- 测试：`tests/test_proxy_chester.lua` 补「set 双写」用例
+
+**外观默认值调整：边框透明度默认 100% → 60%**
+
+- 只改 `modinfo.lua` 的 `default`，档位仍是 20 / 40 / 60 / 80 / 100%
+- 新订阅的玩家默认看到 60% 的木框
+- 已订阅的玩家**不强制**：存档里已固化自己存下的值（含旧默认 100%），本次不做迁移，想改去设置里选
+- 图标透明度（`icon_opacity`，默认 35%）不动
+
+---
+
 ## 0.1.82 — 2026-11-05
 
 **发布包精简：只装代码与运行资源**

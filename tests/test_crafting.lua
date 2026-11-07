@@ -57,7 +57,7 @@ local runtime_global =
     RoundBiasedUp = RoundBiasedUp,
     GetValidRecipe = function(name) return recipes[name] end,
     TheWorld = { ismastersim = true },
-    Prefabs = { log = true, twigs = true, cutstone = true },
+    Prefabs = { log = true, twigs = true, cutstone = true, charcoal = true, silk = true },
     Ents = {},
 }
 
@@ -547,5 +547,38 @@ assert_equal(fake_inventory.Has, base_Has, "Has is restored even when the recipe
 
 ISR._craft_supply = nil
 ISR.Config.craft_from_container = true
+
+-- WX-78 的拓展储物箱：inventoryitem + container，锁在物品栏格，不是 BODY 背包
+-- 原版 Inventory:Has 只扫物品栏物品本身和 overflow（BODY 背包），箱子里面的货它看不到
+local wxbox = { GUID = 4, components = {} }
+wxbox.Transform = { GetWorldPosition = function() return 0, 0, 0 end }
+wxbox.IsInLimbo = function() return false end
+wxbox.components.inventoryitem = { GetGrandOwner = function() return player end, GetOwner = function() return player end }
+wxbox.components.container = NewContainerComp(wxbox)
+wxbox.components.isr_slotmarkstore = MarkStore(wxbox)
+local coal_stack = NewStackItem("charcoal", wxbox, 5)
+wxbox.components.container.slots[2] = coal_stack
+wxbox.components.isr_slotmarkstore:SetMark(2, "charcoal")
+runtime_global.Ents[wxbox.GUID] = wxbox
+
+supply = ISR.GetCraftingSupply(player)
+assert_equal(SupplyTotal(supply, "charcoal"), 5, "a container carried in the inventory slot is supply")
+
+-- BODY 背包是原版 overflow，原版已经算进 materials，这里必须排除
+local backpack = { GUID = 5, components = {} }
+backpack.Transform = { GetWorldPosition = function() return 0, 0, 0 end }
+backpack.IsInLimbo = function() return false end
+backpack.components.inventoryitem = { GetGrandOwner = function() return player end, GetOwner = function() return player end }
+backpack.components.container = NewContainerComp(backpack)
+backpack.components.isr_slotmarkstore = MarkStore(backpack)
+backpack.components.container.slots[1] = NewStackItem("silk", backpack, 4)
+backpack.components.isr_slotmarkstore:SetMark(1, "silk")
+runtime_global.Ents[backpack.GUID] = backpack
+
+local base_overflow = player.components.inventory.GetOverflowContainer
+player.components.inventory.GetOverflowContainer = function() return backpack.components.container end
+supply = ISR.GetCraftingSupply(player)
+assert_equal(SupplyTotal(supply, "silk"), 0, "the body backpack is left to the vanilla path")
+player.components.inventory.GetOverflowContainer = base_overflow
 
 print("PASS test_crafting")

@@ -42,6 +42,28 @@ end
 -- 容器不跟人绑定，也不存在「这只箱子归谁」的概念（用户 2026-11-04 指定）
 -- 原来的「第一个落标记的人成为容器 owner、别人改不了」整段已删除
 
+-- 切斯特没带眼骨时不跟随任何人，归属判据（follower:GetLeader）全为假；
+-- set_slot_mark 的 RPC 入口有「容器正被这名玩家打开就放行」这条例外，
+-- 同步与枚举路径缺同一条 —— 结果是标记写进服务端、客户端一帧都收不到
+-- 两处必须用同一判据，否则就是「点了没反应」
+-- 取容器组件：isr_storage 提供代理容器（暗影切斯特）解引用；
+-- 单模块测试桩只加载 env + slotmarks，这里退回直读
+local function GetContainerComponent(inst)
+    if ISR.GetContainerComponent ~= nil then
+        return ISR.GetContainerComponent(inst)
+    end
+
+    return inst ~= nil and inst.components ~= nil and inst.components.container or nil
+end
+
+local function IsContainerOpenedByPlayer(inst, player)
+    local container = GetContainerComponent(inst)
+    return container ~= nil
+        and player ~= nil
+        and container.IsOpenedBy ~= nil
+        and container:IsOpenedBy(player) == true
+end
+
 -- 枚举该玩家能用的标记走注册表（有标记的容器都登记过），
 -- 这样跟随型容器（切斯特、哈奇）和别的模组容器也能算进来
 -- 两段范围：
@@ -53,6 +75,7 @@ function ISR.GetServerMarks(player)
     for _, inst in ipairs(ISR.GetMarkContainerInstances()) do
         if ISR.IsStorageOwnedByPlayer(player, inst)
             or (ISR.IsSharedMarkContainer ~= nil and ISR.IsSharedMarkContainer(player, inst))
+            or IsContainerOpenedByPlayer(inst, player)
         then
             local store = inst.components ~= nil and inst.components.isr_slotmarkstore or nil
             if store ~= nil then
@@ -151,6 +174,7 @@ function ISR.SyncMarkChangeToViewers(container_inst, slot, prefab, play_clear_so
 end
 
 -- 这名玩家该不该收到这只容器的标记：自己的随身容器，或者共享的世界容器
+-- 「正打开这只容器」同样算 —— 与 RPC 入口的 opened 放行保持一致
 function ISR.IsMarkContainerVisibleTo(player, container_guid)
     local inst = container_guid == player.GUID
         and player
@@ -161,6 +185,78 @@ function ISR.IsMarkContainerVisibleTo(player, container_guid)
 
     return ISR.IsStorageOwnedByPlayer(player, inst)
         or (ISR.IsSharedMarkContainer ~= nil and ISR.IsSharedMarkContainer(player, inst))
+        or IsContainerOpenedByPlayer(inst, player)
+end
+
+-- 代理容器（暗影切斯特）和外层实体是同一个物理容器的两副面孔：
+-- 切斯特实体挂 container_proxy，真容器在口袋维度实体上；UI 打开时槽位绑口袋实体，
+-- 关掉后枚举走切斯特实体。两套标记必须同步写、同步清，
+-- 否则就是「开着看到框、关掉借不到料」（2026-11-08 实测）
+local function GetProxyTwin(inst)
+    if inst == nil then
+        return nil
+    end
+
+    if ISR.GetProxyTwinEntity ~= nil then
+        return ISR.GetProxyTwinEntity(inst)
+    end
+
+    local proxy = inst.components ~= nil and inst.components.container_proxy or nil
+    local twin = nil
+    if proxy ~= nil and proxy.GetMaster ~= nil then
+        twin = proxy:GetMaster()
+    elseif ISR.GetProxyOwner ~= nil then
+        twin = ISR.GetProxyOwner(inst)
+    end
+
+    return twin ~= inst and twin or nil
+end
+
+local function ClearProxyTwinMark(container_inst, slot)
+    local twin = GetProxyTwin(container_inst)
+    if twin == nil then
+        return false
+    end
+
+    local store = twin.components ~= nil and twin.components.isr_slotmarkstore or nil
+    if store ~= nil and store:ClearMark(slot) then
+        ISR.Log("Proxy twin mark cleared", "container", tostring(twin.GUID), "slot", tostring(slot))
+        return true
+    end
+
+    return false
+end
+
+-- 设置时对称双写。order 用同一份，保证两侧的拾取优先级一致
+local function SetProxyTwinMark(container_inst, slot, prefab, order)
+    local twin = GetProxyTwin(container_inst)
+    if twin == nil or ISR.EnsureSlotMarkStore == nil then
+        return false
+    end
+
+    local store = ISR.EnsureSlotMarkStore(twin)
+    if store == nil then
+        return false
+    end
+
+    store:SetMark(slot, prefab, order)
+    ISR.Log("Proxy twin mark set", "container", tostring(twin.GUID), "slot", tostring(slot), "prefab", tostring(prefab))
+    return true
+end
+
+-- 口袋维度实体是 CLASSIFIED 的，只有正打开它的人有副本；
+-- 只给这个人推 twin 那条，广播会打到没有该实体的客户端
+local function SyncProxyTwinToOpener(player, container_inst, slot, prefab, play_clear_sound)
+    local twin = GetProxyTwin(container_inst)
+    if twin == nil
+        or ISR.SyncMarkToClient == nil
+        or not IsContainerOpenedByPlayer(twin, player)
+    then
+        return false
+    end
+
+    ISR.SyncMarkToClient(player, twin.GUID, slot, prefab, play_clear_sound)
+    return true
 end
 
 function ISR.ClearServerSlotMark(player, container_guid, slot, play_clear_sound)
@@ -173,7 +269,11 @@ function ISR.ClearServerSlotMark(player, container_guid, slot, play_clear_sound)
         and player
         or ISR.GetContainerInstFromGUID(container_guid)
     if inst ~= nil then
+        local twin_cleared = ClearProxyTwinMark(inst, slot)
         ISR.SyncMarkChangeToViewers(inst, slot, nil, play_clear_sound == true)
+        if twin_cleared then
+            SyncProxyTwinToOpener(player, inst, slot, nil, play_clear_sound == true)
+        end
     else
         ISR.SyncMarkToClient(player, container_guid, slot, nil, play_clear_sound == true)
     end
@@ -230,7 +330,7 @@ function ISR.GetMarkOwnerPlayer(container_inst)
         return FindPlayerByUserid(owner_userid)
     end
 
-    local container = container_inst.components.container
+    local container = GetContainerComponent(container_inst)
     if container == nil or container.IsOpenedBy == nil then
         return nil
     end
@@ -278,6 +378,8 @@ function ISR.ClearContainerSlotMarkOnMismatch(container_inst, slot, item)
     if not store:ClearMark(slot) then
         return false
     end
+
+    ClearProxyTwinMark(container_inst, slot)
 
     -- 标记不记名：谁在看这只容器就把「清掉」推给谁（共享容器广播给所有人）
     ISR.SyncMarkChangeToViewers(container_inst, slot, nil, true)
@@ -628,7 +730,14 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_SET_MARK, function(player, container
 
     if prefab == nil then
         store:ClearMark(slot)
+        local twin_cleared = ClearProxyTwinMark(container_inst, slot)
+        -- 发起点名必回推：广播的可见性判定不走「打开即可」那条路时，
+        -- 玩家点了清除但框还挂在屏幕上
+        ISR.SyncMarkToClient(player, container_guid, slot, nil)
         ISR.SyncMarkChangeToViewers(container_inst, slot, nil)
+        if twin_cleared then
+            SyncProxyTwinToOpener(player, container_inst, slot, nil)
+        end
         return
     end
 
@@ -644,7 +753,13 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_SET_MARK, function(player, container
     if item_in_slot == nil or ISR.MarkMatchesItem(prefab, item_in_slot) then
         local mark = store:SetMark(slot, prefab, ISR.GetNextServerMarkOrder(player))
         ISR.Log("Server mark set", "container", tostring(container_guid), "slot", tostring(slot), "prefab", tostring(prefab), "order", tostring(mark.order))
+        local twin_set = SetProxyTwinMark(container_inst, slot, prefab, mark.order)
+        -- 发起点先回推（本人一定看得到框），再按可见性广播给其他人
+        ISR.SyncMarkToClient(player, container_guid, slot, prefab)
         ISR.SyncMarkChangeToViewers(container_inst, slot, prefab)
+        if twin_set then
+            SyncProxyTwinToOpener(player, container_inst, slot, prefab)
+        end
     else
         ISR.Log("Server mark rejected", "reason", "occupied", "container", tostring(container_guid), "slot", tostring(slot), "prefab", tostring(prefab), "item", tostring(item_in_slot.prefab))
         SyncAuthoritativeSlotMark(player, container_guid, slot)

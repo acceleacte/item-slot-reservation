@@ -187,4 +187,16 @@ assert_equal(ISR.IsSharedMarkContainer(bob, chest), true, "shared is the default
 assert_equal(ISR.GetServerMarks(bob)[ISR.GetSlotKey(chest.GUID, 2)].prefab, "log",
     "bob sees the chest marks again")
 
+-- 「打开即可」在同步与枚举路径上同样成立（2026-11-05 实测）
+-- 切斯特跟随别人（或没眼骨跟进、leader 指不到当前玩家）时归属判据全假，
+-- set_slot_mark 的 RPC 入口有 IsOpenedBy 例外能写进去，但同步路径没有 ——
+-- 结果是标记落在服务端、客户端一帧都收不到，表现为「点了没反应」
+chester.components.container.IsOpenedBy = function(_, who) return who == bob end
+assert_equal(ISR.IsSharedMarkContainer(bob, chester), false, "a chester following alice is not shared with bob")
+assert_equal(ISR.IsMarkContainerVisibleTo(bob, chester.GUID), true,
+    "the player opening it must receive the push")
+assert_equal(ISR.GetServerMarks(bob)[ISR.GetSlotKey(chester.GUID, 1)].prefab, "grass",
+    "the opener's pickups route into that chester")
+assert_equal(ISR.IsMarkContainerVisibleTo(alice, chester.GUID), true, "the leader still owns it")
+
 print("test_shared_container ok")

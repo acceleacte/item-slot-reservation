@@ -14,6 +14,141 @@ function ISR.GetContainerSlotCount(container)
     end
 end
 
+-- 代理实体的反向索引：真容器实体 GUID → 挂着它的代现实体
+-- 暗影切斯特打开后客户端拿到的容器是口袋维度实体，标记会按它的 GUID 落库；
+-- 算距离、找归属时必须换回切斯特，否则口袋维度实体的世界坐标毫无意义
+--
+-- 这张表在 container_proxy:SetMaster 里填，不能只靠「扫有标记的容器」反查：
+-- 容器一旦没有标记就不在 isr_slotmarkstore 的注册表里，而距离判定恰好要用宿主
+-- （2026-11-08 实测：暗影切斯特的标记全部 :range 失败，物品进不了格子）
+ISR._proxy_owners = ISR._proxy_owners or {}
+ISR._proxy_hosts = ISR._proxy_hosts or {}
+
+local function IsMasterSim()
+    local world = ISR.GetGlobalValue("TheWorld", nil)
+    return world == nil or world.ismastersim == true
+end
+
+-- 单模块测试桩只加载 env + storage，没有组件钩子；真环境一定有
+if AddComponentPostInit ~= nil then
+    AddComponentPostInit("container_proxy", function(self)
+        if not IsMasterSim() or self.SetMaster == nil then
+            return
+        end
+
+        local old_SetMaster = self.SetMaster
+        function self:SetMaster(ent)
+            local prev = self.master
+            old_SetMaster(self, ent)
+
+            if prev ~= nil and prev.GUID ~= nil and ISR._proxy_hosts[prev.GUID] == self.inst then
+                ISR._proxy_hosts[prev.GUID] = nil
+                ISR._proxy_owners[prev.GUID] = nil
+            end
+
+            if ent ~= nil and ent.GUID ~= nil and self.inst ~= nil then
+                ISR._proxy_hosts[ent.GUID] = self.inst
+                ISR._proxy_owners[ent.GUID] = self.inst
+            end
+        end
+    end)
+end
+
+function ISR.GetProxyOwner(master)
+    if master == nil or master.GUID == nil then
+        return nil
+    end
+
+    local host = ISR._proxy_hosts[master.GUID]
+    if host ~= nil and (host.IsValid == nil or host:IsValid()) then
+        return host
+    end
+
+    local cached = ISR._proxy_owners[master.GUID]
+    if cached ~= nil and (cached.IsValid == nil or cached:IsValid()) then
+        return cached
+    end
+
+    ISR._proxy_owners[master.GUID] = nil
+    if ISR.GetMarkContainerInstances == nil then
+        return nil
+    end
+
+    for _, inst in ipairs(ISR.GetMarkContainerInstances()) do
+        local proxy = inst.components ~= nil and inst.components.container_proxy or nil
+        if proxy ~= nil and proxy.GetMaster ~= nil and proxy:GetMaster() == master then
+            ISR._proxy_owners[master.GUID] = inst
+            return inst
+        end
+    end
+
+    return nil
+end
+
+-- 一个物理容器的两副面孔：切斯特实体（带 container_proxy）↔ 口袋维度实体（真容器）
+-- 标记互查、store 回退、双写都靠它。不要用「扫有标记的容器」代替：
+-- 容器没标记时不在注册表里，反向就断了（2026-11-08 实测）
+function ISR.GetProxyTwinEntity(inst)
+    if inst == nil or inst.components == nil then
+        return nil
+    end
+
+    local proxy = inst.components.container_proxy
+    if proxy ~= nil and proxy.GetMaster ~= nil then
+        local master = proxy:GetMaster()
+        return master ~= inst and master or nil
+    end
+
+    return ISR.GetProxyOwner(inst)
+end
+
+-- 两个 GUID 是否指向同一个物理容器：代理容器的两副面孔算同一个
+-- 放置路由按 GUID 匹配目标，暗影切斯特会出现「标记按切斯特记、目标按口袋实体给」
+function ISR.IsSameStorage(guid_a, guid_b)
+    if guid_a == nil or guid_b == nil then
+        return false
+    elseif guid_a == guid_b then
+        return true
+    end
+
+    local a = ISR.GetContainerInstFromGUID(guid_a)
+    local b = ISR.GetContainerInstFromGUID(guid_b)
+    if a == nil or b == nil then
+        return false
+    end
+
+    local ca = ISR.GetContainerComponent(a)
+    local cb = ISR.GetContainerComponent(b)
+    return ca ~= nil and ca == cb
+end
+
+-- 取实体的容器组件，代理容器顺着 master 找真身
+-- 暗影切斯特是唯一的内置例子：chester.lua 的 SwitchToShadowContainerProxy 会把原来的
+-- container 组件整个 RemoveComponent 掉，物品搬进 TheWorld:GetPocketDimensionContainer("shadow")，
+-- 实体上只剩 container_proxy。标记仍然挂在切斯特实体上，所以读物品、算借料、自动归位
+-- 都必须走这条解引用，否则一律拿到 nil（2026-11-07 实测：升级后借料与归位全断）
+function ISR.GetContainerComponent(inst)
+    if inst == nil or inst.components == nil then
+        return nil
+    end
+    if inst.components.container ~= nil then
+        return inst.components.container
+    end
+
+    local proxy = inst.components.container_proxy
+    if proxy == nil or proxy.GetMaster == nil then
+        return nil
+    end
+
+    local master = proxy:GetMaster()
+    if master == nil or master.components == nil or master.components.container == nil then
+        return nil
+    end
+
+    ISR._proxy_owners[master.GUID] = inst
+    return master.components.container
+end
+
 local function IsPlayerEntity(inst)
     return inst ~= nil
         and inst.HasTag ~= nil
@@ -92,7 +227,8 @@ function ISR.IsSharedMarkContainer(player, inst)
         return false
     end
 
-    if inst == nil or inst.components == nil or inst.components.container == nil then
+    -- 暗影切斯特只有 container_proxy，容器在口袋维度实体上
+    if inst == nil or inst.components == nil or ISR.GetContainerComponent(inst) == nil then
         return false
     end
     -- 玩家自己的物品栏不是共享容器（HasTag 和组件两条都判，测试桩可能没有 HasTag）
@@ -219,8 +355,13 @@ function ISR.IsStorageWithinRange(owner, storage, limit)
     end
 
     -- 装在别的容器里的（limbo）没有世界坐标，跟着宿主容器算距离
+    -- 代理容器（暗影切斯特）按外层实体算：口袋维度实体的世界坐标没有意义
+    -- 宿主排第一：`_isr_owner_inst` 是会被反复改写的缓存字段，不能让它抢在映射前面
     local inst = storage.inst or storage
-    local anchor = GetStorageHolder(storage) or inst
+    local anchor = (ISR.GetProxyOwner ~= nil and ISR.GetProxyOwner(inst))
+        or storage._isr_owner_inst
+        or GetStorageHolder(storage)
+        or inst
     if anchor.Transform == nil then
         return true
     elseif anchor.IsInLimbo ~= nil and anchor:IsInLimbo() then
@@ -486,7 +627,19 @@ ISR.RegisterStorageAdapter("container",
             or storage.slots ~= nil and storage.CanTakeItemInSlot ~= nil
     end,
     GetStorageFromEntity = function(_, inst)
-        return inst.components ~= nil and inst.components.container or nil
+        local container = ISR.GetContainerComponent(inst)
+        if container == nil then
+            return nil
+        end
+
+        -- 代理容器（暗影切斯特）：真实组件属于口袋维度实体，标记却按切斯特的 GUID 记，
+        -- 把外层实体记在组件上，供 GetGUID 还原成玩家看到的那个 GUID
+        if inst.components ~= nil and inst.components.container == nil then
+            container._isr_owner_inst = inst
+        elseif container._isr_owner_inst ~= nil then
+            container._isr_owner_inst = nil
+        end
+        return container
     end,
     ResolvePlayerOwner = function(_, storage)
         local inventoryitem = storage.inst ~= nil
@@ -496,7 +649,21 @@ ISR.RegisterStorageAdapter("container",
         return inventoryitem ~= nil and (inventoryitem:GetGrandOwner() or inventoryitem.owner) or nil
     end,
     GetGUID = function(_, storage)
-        return storage.inst ~= nil and storage.inst.GUID or nil
+        -- 代理容器（暗影切斯特）的两副面孔必须是同一个 GUID：标记按切斯特落库，
+        -- 打开时 UI 拿到的却是口袋维度实体。谁最后被访问过不该影响结果，
+        -- 所以先查宿主，再退回 _isr_owner_inst / 自身
+        -- （2026-11-08 实测：GUID 漂移导致 Marked placement 全部 :target 跳过）
+        local inst = storage.inst
+        local host = inst ~= nil and ISR.GetProxyOwner ~= nil and ISR.GetProxyOwner(inst) or nil
+        if host ~= nil then
+            return host.GUID
+        end
+
+        local owner = storage._isr_owner_inst
+        if owner ~= nil then
+            return owner.GUID
+        end
+        return inst ~= nil and inst.GUID or nil
     end,
     GetSlotCount = function(_, storage)
         return ISR.GetContainerSlotCount(storage)

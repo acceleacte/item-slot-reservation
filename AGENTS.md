@@ -9,7 +9,7 @@
 | 项 | 值 |
 |---|---|
 | 模组名（显示名） | 物品格预留（`modinfo.name`，工坊标题仍为 Item Slot Reservation；目录名/存档引用是 `workshop-3830575143`，与显示名无关） |
-| 版本 | 0.1.82（`modinfo.lua`） |
+| 版本 | 0.1.83（`modinfo.lua`） |
 | 类型 | 服务器模组，`all_clients_require_mod = true`（2026-10-31 由 false 改来，见 §9.5），`client_only_mod = false` |
 | `api_version` | 10 |
 | 全局表 | `ISR`（同时挂到 `GLOBAL.ISR`） |
@@ -21,7 +21,7 @@
 
 ---
 
-## 2. 文件结构（4300 行 Lua，31 个测试）
+## 2. 文件结构（4500 行 Lua，36 个测试）
 
 ```
 modmain.lua                 20 行，14 个 modimport，顺序有依赖（env → config → icons → storage → markstores → slotmarks → placement → candidates → crafting → debug → persistence → inventoryhooks → clientpredict → uihooks）
@@ -42,7 +42,7 @@ scripts/
   isr_clientpredict.lua    330  客户端落点预测（标记先行判落点 → 背包预测 / 守卫窗口）
   isr_uihooks.lua          368  invslot / inventorybar / containerwidget 的 UI hook
   components/isr_slotmarkstore.lua  164  标记存储组件（OnSave/OnLoad、容器 owner、add_component_if_missing、注册表登记）
-tests/                      33 个 lua 测试 + run_lua_tests.py
+tests/                      36 个 lua 测试 + run_lua_tests.py
 images/                     modicon + wood_frame_128_ARGB（木框贴图）
 cover/                      isr-base-128.png（无字原封面，所有封面脚本的底图）
                             isr-cover-512.png（512x512 带字母版）
@@ -220,6 +220,17 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 
 **打开即可标记**：`set_slot_mark` 的 RPC 里，`container:IsOpenedBy(player)` 为真就直接放行（`isr_slotmarks.lua`）。切斯特没眼骨时 `follower:GetLeader()` 是 nil，只有这条能让它可标记
 
+**代理容器必须解引用**（0.1.83，2026-11-07 实测）：暗影切斯特（喂 9 个噩梦燃料）没有 `container` 组件 —— 原版 `chester.lua` 的 `SwitchToShadowContainerProxy` 会 `RemoveComponent("container")`，物品搬进 `TheWorld:GetPocketDimensionContainer("shadow")`，实体上只剩 `container_proxy`（读档时 `OnLoadPostPass` 再切一次）。一律用 `ISR.GetContainerComponent(inst)` 取容器，不要直接读 `inst.components.container`：
+
+  - 宿主映射由 `container_proxy:SetMaster` 建立（`ISR._proxy_hosts`），**不要**靠「扫有标记的容器」反查：容器没标记就不在注册表里，反查失败后距离按口袋维度实体坐标（0,0,0）算，标记全判 `:range`（2026-11-08 实测：物品一律进不了格子）
+  - `GetGUID` 恒返回宿主 GUID；`storage._isr_owner_inst` 只是兜底 —— 那个字段谁最后访问谁改写，会来回漂移，导致 `Marked placement` 的目标匹配随机失败
+  - 放置路由用 `ISR.IsSameStorage(a, b)` 比较两个 GUID 是否同一个物理容器，别直接 `==`
+  - 距离用 `ISR.GetProxyOwner(真容器实体)` 换回切斯特算，口袋维度的世界坐标没有意义
+  - 客户端打开暗影切斯特时容器 UI 绑的是口袋维度实体（CLASSIFIED，只对打开者同步），标记会按它的 GUID 落库；同一物理格存在两套标记（切斯特一套、口袋一套）时，借料按 `真容器GUID:格号` 去重。**设置与清除必须双写**（`SetProxyTwinMark` / `ClearProxyTwinMark`）—— 只写一侧的结果是「开着看有框、关掉借不到料」（2026-11-08 实测）。twin 那条同步只推给正打开它的人，口袋实体是 CLASSIFIED 的，别人没有副本
+  - 雪切斯特（9 个蓝宝石）走 `SwitchToContainer`，实体上就是普通 `container` 组件，正常路径即可
+
+**同一条例外必须出现在同步与枚举路径**（0.1.83，2026-11-05 实测）：`ISR.IsMarkContainerVisibleTo` 与 `ISR.GetServerMarks` 都要算「容器正被这名玩家打开」（`IsContainerOpenedByPlayer`）。只写在 RPC 入口的后果是：标记确实写进了服务端 store，但回推客户端时被可见性判定拦掉 —— 玩家点了没反应、框永远不出现，物品也不回位。眼骨在地上（切斯特不跟随任何人）或 leader 指向旧实体时最容易触发
+
 **推送要按可见性分流**（`ISR.SyncMarkChangeToViewers`）：共享容器的变化广播给所有装了这个模组的玩家（`ISR.BroadcastMarkChange` → `ISR.IsMarkContainerVisibleTo` 过滤），随身容器只推给主人。B 改完箱子，A 开着箱子时界面立刻同步
 
 **路由主人按模式取**：`ISR.GetMarkOwnerPlayer` —— 独占模式返回容器上记的 `owner` 对应的在线玩家（`FindPlayerByUserid`）；共享模式返回**当前打开这只容器的玩家**（`container:IsOpenedBy` 扫 `AllPlayers`），没人打开返回 nil，此时容器钩子只做解标记、不做路由
@@ -296,7 +307,26 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 | `GetIngredients` | 原版 materials 之外，把缺口记到容器内实体上（materials 是**两层**结构 `{[类型] = {[实体] = 数量}}`） |
 | `RemoveIngredients` | 容器条目自消费：部分扣减 `stackable:Get`（对实体操作，不看容器开闭）；整堆/单件 `Container:RemoveItem` 清槽位再 Remove。物品栏条目留给原版 |
 
-**不重复扣料的排除规则**（供应集合必须与原版统计不相交）：玩家物品栏标记、随身容器（背包/背包里的桶，原版 overflow 已覆盖）、玩家**正打开**的容器（原版 opencontainers 已覆盖）一律不进供应；另排除 `excludefromcrafting` / `readonlycontainer` 与 `nocrafting` 物品。少排会重复扣料（合成少付钱），这是本文件最要紧的约束
+**不重复扣料的排除规则**（供应集合必须与原版统计不相交）：原版 `Inventory:Has(item, amount, true)` 只覆盖三处 —— 物品栏格/手持、`GetOverflowContainer()`（装备栏 BODY 背包）、`opencontainers`（正打开的容器）。排除必须与这三处**精确对齐**：
+
+| 情形 | 处理 |
+|---|---|
+| 玩家自己（`container == player`） | 排除，原版已算 |
+| `inventory:GetOverflowContainer()` 返回的那个 container | 排除，原版已算（只认 BODY 背包且 `canbeopened`） |
+| `container:IsOpenedBy(player)` 为真 | 排除，原版 opencontainers 已算 |
+| **其余随身容器**（物品栏里的 WX-78 拓展储物箱、背包里的桶） | **保留** —— 原版看不见它们。0.1.83 修正：早先用 `IsStorageCarriedByPlayer` 把整类随身容器排掉，WX 储物箱里的固定格借不到料 |
+| `excludefromcrafting` / `readonlycontainer` / `canbeopened == false` | 排除 |
+| `nocrafting` 物品 | 排除（`CanCraftWithItem`） |
+
+少排会重复扣料（合成少付钱），多排会借不到料，这是本文件最要紧的约束
+
+**两个口径不能合并**（0.1.83，2026-11-08 实测）：`GetCraftingSupply(player)` 是服务端口径（扣料用）；`GetCraftingSupply(player, true)` 是客户端口径（决定配方格子灰不灰）。差别只有「正打开的容器」：
+
+- 服务端：一律排除。原版 `GetIngredients` 已把它们填进 `materials`，再填一次就是重复扣料
+- 客户端：**全收**。服务端猜不出哪台客户端数得到 —— 口袋维度实体 `entity:Hide()`、WX 储物箱锁在物品栏格、多人共开时 `SetClassifiedTarget(nil)`，按类型猜必错一个
+- 客户端拿到后自己扣：`CountCountedOpenContainerItems` 按原版 `inventory_classified:Has` 的遍历与过滤条件，算出「count 里已经包含的打开容器部分」，再算 `count - 已数到 + supply`
+
+症状对照：打开容器配方整片灰、关掉立刻亮 → 客户端口径没收打开容器；按钮亮着但点了没反应 → 扣减那步漏了（同一批货算两遍，客户端高估）
 
 - 只认标记：格子必须固定给该 prefab 且格中有该物品，空标记格不算
 - 作用距离复用 `container_range`（`ISR.IsStorageWithinRange`）；开关 `craft_from_container` 默认开（老存档缺该项按 nil → 开）
@@ -378,16 +408,16 @@ Shift + 左键转移走 `MoveItemFromAllOfSlot` / `Half` / `Count`，包装只�
 | 控制台预留 | `ISR.DebugSetPrefabMark(3, "cutgrass")`，背包 `(2, "twigs", true)` |
 | 控制台清除 | `ISR.DebugClearSlotMark(3)` |
 
-配置项（`isr_config.lua` 读）：`language`（zh / en，默认 zh；只管游戏内提示文字，设置项文案固定中文）、`pin_modifier`（SHIFT / CTRL / ALT / NONE，默认 SHIFT）、`pin_key`（MIDDLE / RIGHT / V B N G F C X Z R T H J K L / NONE，默认 MIDDLE）、`icon_opacity`（0~1，默认 0.35）、`border_opacity`（0~1，默认 1）、`debug_log`、`pickup_to_container`（默认 false；只管世界容器，随身容器永远接收）、`container_range`（near / medium / far，默认 medium）、`craft_from_container`（**默认 false，测试版**；合成借料开关，作用距离用 `container_range`）、`craft_ping`（original / borrow / silent，默认 borrow；合成提示音处置）
+配置项（`isr_config.lua` 读）：`language`（zh / en，默认 zh；只管游戏内提示文字，设置项文案固定中文）、`pin_modifier`（SHIFT / CTRL / ALT / NONE，默认 SHIFT）、`pin_key`（MIDDLE / RIGHT / V B N G F C X Z R T H J K L / NONE，默认 MIDDLE）、`icon_opacity`（0~1，默认 0.35）、`border_opacity`（0~1，默认 0.60）、`debug_log`、`pickup_to_container`（默认 false；只管世界容器，随身容器永远接收）、`container_range`（near / medium / far，默认 medium）、`craft_from_container`（**默认 false，测试版**；合成借料开关，作用距离用 `container_range`）、`craft_ping`（original / borrow / silent，默认 borrow；合成提示音处置）
 
 两个透明度都画在同一个格子上，改其中一个不影响另一个：
 
 | 配置 | 作用对象 | 默认 | 实现 |
 |---|---|---|---|
 | `icon_opacity` | 空预留格里那件物品的图标 | 0.35 | `ApplyIconWidget` 的 `SetTint(1,1,1,alpha)` |
-| `border_opacity` | 木框贴图 `wood_frame_128_ARGB` | 1（不透明） | `isr_icons.lua` 的 `SyncSlotBorderTint`，在 `ApplySlotBorder` 里跟着 `SetSize` 一起刷 |
+| `border_opacity` | 木框贴图 `wood_frame_128_ARGB` | 0.60（0.1.83 起；之前 1） | `isr_icons.lua` 的 `SyncSlotBorderTint`，在 `ApplySlotBorder` 里跟着 `SetSize` 一起刷 |
 
-`GetBorderAlpha` 在 `ISR.Config.border_opacity` 为 nil 时回落 1：老档的 `modsettings` 里没有这一项，缺值不能让木框变透明。0 等于不画框（widget 仍在，`SetClickable(false)`，不挡点击）。运行时改配置不生效，游戏要重启
+默认值只影响新订阅：`modinfo.lua` 的 `default = 0.60`，已订阅的存档里已固化了自己的值（含旧默认 1.00），**不做迁移**（用户 2026-11-07 指定）。`GetBorderAlpha` 在 `ISR.Config.border_opacity` 为 nil 时回落 1：老档的 `modsettings` 里没有这一项，缺值不能让木框变透明。0 等于不画框（widget 仍在，`SetClickable(false)`，不挡点击）。运行时改配置不生效，游戏要重启
 
 **不要**再加 `mark_modifier` / `prefab_mark` 这类选项：早期开发版曾用组合键循环标记、并用开关控制物品标记，0.1.0 已把它们删掉，只剩「按住固定手势点格子」一条路径
 

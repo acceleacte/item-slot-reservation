@@ -5,7 +5,8 @@ ISR.Config =
     -- 语言：zh / en。只管游戏内提示文字，设置项文案固定中文（modinfo 由引擎渲染，改不了）
     language = ISR.NormalizeConfigValue(GetModConfigData("language"), ISR.ValidLanguageOptions, "zh"),
     icon_opacity = ISR.ToNumber(GetModConfigData("icon_opacity")) or 0.35,
-    -- 木框透明度：0 完全透明（等于不画框），1 不透明。默认 1，保持加这个选项之前的观感
+    -- 木框透明度：0 完全透明（等于不画框），1 不透明。默认 60%（modinfo 的 default 说了算）
+    -- 已订阅的老存档保留自己存下的值，不做迁移
     border_opacity = ISR.ToNumber(GetModConfigData("border_opacity")) or 1,
     debug_log = GetModConfigData("debug_log") == true,
     pin_key = ISR.NormalizeConfigValue(GetModConfigData("pin_key"), ISR.ValidPinKeyOptions, "MIDDLE"),

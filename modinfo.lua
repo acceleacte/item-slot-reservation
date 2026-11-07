@@ -19,7 +19,7 @@ description = [[
 并且可以在模组设置中关闭测试版内容以(尝试)解决问题
 ]]
 author = "acceleacte"
-version = "0.1.82"
+version = "0.1.83"
 api_version = 10
 dst_compatible = true
 dont_starve_compatible = false
@@ -126,7 +126,7 @@ configuration_options =
             { description = "80%", data = 0.80 },
             { description = "100%", data = 1.00 },
         },
-        default = 1.00,
+        default = 0.60,
     },
     Section("section_container", "测试内容"),
     {
