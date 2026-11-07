@@ -96,7 +96,7 @@ assert_equal(ISR.GetStorageAdapter(custom):GetGUID(custom), 100, "replacement ta
 
 assert_equal(ISR.RegisterStorageAdapter("invalid", {}), false, "invalid adapter is rejected")
 
--- 固定格里已经有同种物品的未满堆叠时，容器适配器要认这一格（草、树枝并堆），
+-- 标记格里已经有同种物品的未满堆叠时，容器适配器要认这一格（草、树枝并堆），
 -- 只判「空不空」会让采集到的资源被推回物品栏
 local function NewStack(prefab, stacksize, maxsize)
     return

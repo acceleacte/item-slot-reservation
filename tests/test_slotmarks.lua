@@ -77,7 +77,7 @@ server_handlers.set(player, player, 1, "twigs")
 assert_equal(player.components.isr_slotmarkstore:GetMark(1).prefab, "log", "occupied slot keeps authoritative mark")
 assert_equal(synced_prefab, "log", "rejected update syncs the authoritative mark")
 
--- 格子里放的正是要预留的那种物品时，服务端必须接受（V+左键固定已有物品的格子）
+-- 格子里放的正是要预留的那种物品时，服务端必须接受（V+左键标记已有物品的格子）
 server_handlers.set(player, player, 2, "cutgrass")
 assert_equal(player.components.isr_slotmarkstore:GetMark(2).prefab, "cutgrass", "matching occupied slot accepts the mark")
 
@@ -124,7 +124,7 @@ server_handlers.set(player, chester, 2, "twigs")
 assert_equal(chester.components.isr_slotmarkstore:GetMark(2).prefab, "twigs",
     "an opened container accepts a mark even without a resolved owner")
 
--- 标记不记名：容器是独立的东西，别的玩家同样能固定、同样能改（0.1.8）
+-- 标记不记名：容器是独立的东西，别的玩家同样能标记、同样能改（0.1.8）
 local other = { GUID = 3, userid = "KU_other", components = { inventory = {} } }
 chester_container.IsOpenedBy = function(_, doer) return doer == player or doer == other end
 

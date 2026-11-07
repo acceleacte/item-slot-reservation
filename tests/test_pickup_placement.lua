@@ -55,7 +55,7 @@ local function NewItem(prefab)
     return { prefab = prefab, components = { inventoryitem = {} }, IsValid = function() return true end }
 end
 
--- 玩家身上一格（order 更早）和切斯特一格（order 更晚）固定了同一种物品
+-- 玩家身上一格（order 更早）和切斯特一格（order 更晚）标记了同一种物品
 local owner = { GUID = owner_guid, storages = {} }
 owner.storages[owner_guid] = NewStorage(owner_guid, "inventory")
 owner.storages[900] = NewStorage(900, "container")
@@ -67,7 +67,7 @@ owner.marks = { beargerfur_sack = { inventoryslot, chesterslot } }
 local sack = NewItem("beargerfur_sack")
 local inventory = { inst = owner }
 
--- 默认开启：容器里的固定格优先，即使它的 order 更晚
+-- 默认开启：容器里的标记格优先，即使它的 order 更晚
 local context = ISR.MakePlacementContext({ owner = owner, inventory = inventory, item = sack })
 local result, slot = ISR.TryPlaceByMarks(context)
 assert_equal(result, true, "container mark wins when pickup_to_container is on")
@@ -76,7 +76,7 @@ assert_equal(owner.storages[900].placed.item, sack, "the picked up item is the o
 assert_equal(#pickup_sounds, 1, "placing into a container plays the pickup sound")
 assert_equal(pickup_sounds[1], "beargerfur_sack", "the sound follows the item prefab")
 
--- 关掉开关：世界里的容器（切斯特）不参与，物品回玩家物品栏的固定格
+-- 关掉开关：世界里的容器（切斯特）不参与，物品回玩家物品栏的标记格
 ISR.Config.pickup_to_container = false
 owner.storages[900].placed = nil
 pickup_sounds = {}
@@ -98,7 +98,7 @@ ISR.Config.pickup_to_container = true
 assert_equal(ISR.TryPlaceByMarks(ISR.MakePlacementContext({ owner = owner, inventory = inventory, item = sack })), true,
     "container marks apply again once the option is back on")
 
--- 玩家身上的背包不受开关影响：关掉也照样吸回固定格
+-- 玩家身上的背包不受开关影响：关掉也照样吸回标记格
 local pack = NewStorage(902, "container")
 pack.carried = true
 owner.storages[902] = pack
@@ -115,7 +115,7 @@ assert_equal(pack_slot, 5, "the carried container slot is the landing slot")
 assert_equal(owner.storages[900].placed, nil, "the world container stays untouched while the option is off")
 assert_equal(#pickup_sounds, 1, "placing into the carried container plays the pickup sound")
 
--- 随身容器和物品栏都固定了同一种物品：随身容器优先（和开启时一致）
+-- 随身容器和物品栏都标记了同一种物品：随身容器优先（和开启时一致）
 owner.storages[902].placed = nil
 owner.marks.beargerfur_sack = { inventoryslot, packslot }
 local both_result, both_slot = ISR.TryPlaceByMarks(ISR.MakePlacementContext({ owner = owner, inventory = inventory, item = sack }))
@@ -138,7 +138,7 @@ local container_side = ISR.MakePlacementContext({
 assert_equal(ISR.TryPlaceByMarks(container_side), true, "container-side give still places by marks")
 assert_equal(#pickup_sounds, 0, "container-side give does not fake a pickup sound")
 
--- 固定格里已经有同类未满堆时（采草、砍树枝最常见的场景），
+-- 标记格里已经有同类未满堆时（采草、砍树枝最常见的场景），
 -- 适配器的 CanUseSlot 优先于 CanUseEmptySlot，资源要并进那一堆
 local stacking_storage = { guid = 901 }
 stacking_storage.adapter =
@@ -160,7 +160,7 @@ assert_equal(ISR.TryPlaceByMarks(ISR.MakePlacementContext({ owner = owner, inven
 assert_equal(stacking_storage.placed.slot, 2, "grass merges into the fixed container slot")
 assert_equal(#pickup_sounds, 1, "merging into a container still plays the pickup sound")
 
--- 距离不够时容器固定格不参与（否则站在地图另一头也能把东西送进基地箱子）
+-- 距离不够时容器标记格不参与（否则站在地图另一头也能把东西送进基地箱子）
 ISR.GetContainerRangeLimit = function() return 10 end
 ISR.IsStorageWithinRange = function() return false end
 owner.marks.cutgrass = { { container_guid = 901, slot = 2, prefab = "cutgrass", order = 4 } }

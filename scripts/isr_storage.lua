@@ -608,7 +608,7 @@ ISR.RegisterStorageAdapter("inventory",
         end
         return storage:GetItemInSlot(slot) == nil and storage:CanTakeItemInSlot(item, slot)
     end,
-    -- 能放进这一格：空格，或者同类未满堆叠（拾取同种资源时要并进固定格里那堆）
+    -- 能放进这一格：空格，或者同类未满堆叠（拾取同种资源时要并进标记格里那堆）
     CanUseSlot = function(_, storage, item, slot)
         if ISR.CanUseInventorySlot ~= nil then
             return ISR.CanUseInventorySlot(storage, item, slot)
@@ -677,7 +677,7 @@ ISR.RegisterStorageAdapter("container",
         end
         return storage:GetItemInSlot(slot) == nil and storage:CanTakeItemInSlot(item, slot)
     end,
-    -- 能放进这一格：空格，或者同类未满堆叠（草、树枝这类资源要并进固定格里那堆）
+    -- 能放进这一格：空格，或者同类未满堆叠（草、树枝这类资源要并进标记格里那堆）
     CanUseSlot = function(_, storage, item, slot)
         if ISR.CanUseContainerSlot ~= nil then
             return ISR.CanUseContainerSlot(storage, item, slot)

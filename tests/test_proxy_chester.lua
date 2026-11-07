@@ -172,7 +172,7 @@ local marks = ISR.GetServerMarks(player)
 assert_equal(marks[ISR.GetSlotKey(shadow_chester.GUID, 9)].prefab, "nightmarefuel",
     "the shadow chester mark stays on the chester guid")
 
--- 借料：固定格里真有货时必须算进供应
+-- 借料：标记格里真有货时必须算进供应
 local fuel =
 {
     prefab = "nightmarefuel",

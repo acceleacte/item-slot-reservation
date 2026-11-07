@@ -194,7 +194,7 @@ chester.components.container.slots[3] = log_stack
 local twig_stack = NewStackItem("twigs", chest, 2)
 chest.components.container.slots[1] = twig_stack
 
--- 标记：切斯特第 3 格固定 log，箱子第 1 格固定 twigs
+-- 标记：切斯特第 3 格标记 log，箱子第 1 格标记 twigs
 chester.components.isr_slotmarkstore:SetMark(3, "log")
 chest.components.isr_slotmarkstore:SetMark(1, "twigs")
 

@@ -38,7 +38,7 @@ function ISR.MarkMatchesItem(mark, item)
         and NormalizePrefab(item.prefab) == prefab
 end
 
--- 标记不记名：容器是独立的东西，谁打开谁都能固定、清除、使用
+-- 标记不记名：容器是独立的东西，谁打开谁都能标记、清除、使用
 -- 容器不跟人绑定，也不存在「这只箱子归谁」的概念（用户 2026-11-04 指定）
 -- 原来的「第一个落标记的人成为容器 owner、别人改不了」整段已删除
 
@@ -490,7 +490,7 @@ function ISR.PlayClientMarkClearSound()
     end
 end
 
--- 固定成功的反馈音和画框一起放在服务端确认之后播 —— 点击瞬间就响会让被拒的操作
+-- 标记成功的反馈音和画框一起放在服务端确认之后播 —— 点击瞬间就响会让被拒的操作
 -- 也有声音，玩家会误以为成功了
 function ISR.PlayClientMarkPinnedSound()
     local focal_point = ISR.GetFocalPoint()
@@ -573,8 +573,8 @@ function ISR.ApplySyncedClientSlotMark(container_inst, slotnum, prefab, play_cle
     return true
 end
 
--- 把「这一格现在装的东西」固定下来：不用手持物品，草、树枝等资源同样适用
--- 同一格再固定一次视为取消
+-- 把「这一格现在装的东西」标记下来：不用手持物品，草、树枝等资源同样适用
+-- 同一格再标记一次视为取消
 function ISR.PinClientSlotMark(slot)
     if slot == nil or slot.num == nil or slot.container == nil then
         return false
@@ -613,7 +613,7 @@ function ISR.ClearClientSlotMark(slot)
         return false
     end
 
-    -- 同固定：不预先擦框、不预先播音，等服务端确认（sync_mark 带 nil）再做
+    -- 同标记：不预先擦框、不预先播音，等服务端确认（sync_mark 带 nil）再做
     ISR.Log("ClearClientSlotMark requested", "slot", tostring(slot.num))
     return true
 end
@@ -708,8 +708,8 @@ AddModRPCHandler(ISR.RPC_NAMESPACE, ISR.RPC_SET_MARK, function(player, container
     end
 
     -- 独占模式（container_sharing = exclusive）：这只容器已经记在别人名下就不许动 ——
-    -- 固定、修改、清除一律拒绝，并回推 nil（他本来也不该看见别人的框）
-    -- 共享模式（默认）下没有任何按 userid 的拦截，谁能打开谁就能固定 / 改 / 清
+    -- 标记、修改、清除一律拒绝，并回推 nil（他本来也不该看见别人的框）
+    -- 共享模式（默认）下没有任何按 userid 的拦截，谁能打开谁就能标记 / 改 / 清
     if not ISR.AreContainerMarksShared() then
         local owner_userid = store.GetOwner ~= nil and store:GetOwner() or nil
         if owner_userid ~= nil

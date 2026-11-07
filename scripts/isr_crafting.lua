@@ -1,8 +1,8 @@
 ISR = ISR or {}
 
--- 合成借料（0.1.7）：合成时自动补足材料缺口，来源是「已固定且在作用距离内」的世界容器
+-- 合成借料（0.1.7）：合成时自动补足材料缺口，来源是「已标记且在作用距离内」的世界容器
 -- （切斯特、基地箱子等）原版只扫玩家物品栏 + 当前打开的容器（inventory.opencontainers），
--- 关着的容器不参与；本文件把缺口部分从容器内固定格里补上
+-- 关着的容器不参与；本文件把缺口部分从容器内标记格里补上
 --
 -- 三个 hook 点（scripts/components/builder.lua）：
 --   HasIngredients     合成入口判定，原版查不到关着的容器，补上容器供应后再判一次
@@ -44,7 +44,7 @@ local function GetStackCount(item)
     return stackable ~= nil and stackable:StackSize() or 1
 end
 
--- 收集本玩家「可借料」的容器内固定格供应：prefab -> { {item=实体, count=堆叠数}, ... }
+-- 收集本玩家「可借料」的容器内标记格供应：prefab -> { {item=实体, count=堆叠数}, ... }
 -- 排除三类，避免与原版统计重叠导致重复扣料：
 --   1. 玩家自己的物品栏标记（原版本就算）
 --   2. 装备栏背包（原版 GetOverflowContainer 已算）
@@ -336,7 +336,7 @@ end)
 -- 配方格子是灰是亮由客户端 builder_replica:HasIngredients 决定，它只数物品栏
 -- 和「当前打开的容器」（inventory_classified 的 GetOpenContainers）关着的切斯特、
 -- 基地箱子里有多少东西客户端根本不知道，光靠服务端 hook 改不了格子状态
--- 所以服务端把「本玩家可借的固定格数量」按 prefab 汇总成串推过去，客户端判定时
+-- 所以服务端把「本玩家可借的标记格数量」按 prefab 汇总成串推过去，客户端判定时
 -- 加上这份数字，就能和服务端 HasIngredients 的结论保持一致
 --
 -- 口径必须和服务端 GetCraftingSupply 完全一致（排除随身容器 / 玩家打开的容器 /
@@ -405,14 +405,14 @@ end)
 -- ---------------------------------------------------------------------------
 -- 客户端：配方可用性判定
 -- 原版 builder_replica:HasIngredients 只认物品栏 + 打开的容器；这里在它判负后，
--- 用服务端推来的固定格数量补足缺口，再判一次
+-- 用服务端推来的标记格数量补足缺口，再判一次
 -- ---------------------------------------------------------------------------
 function ISR.GetSyncedCraftSupply(prefab)
     local supply = ISR._craft_supply
     return supply ~= nil and prefab ~= nil and supply[prefab] or 0
 end
 
--- 返回 true 表示「缺口全部由固定格补上，且角色/技术材料齐」
+-- 返回 true 表示「缺口全部由标记格补上，且角色/技术材料齐」
 -- 合成菜单一次重算会把每个配方缺的每种材料都过一遍，逐条打日志能刷出几千行
 -- 同一种材料每次进游戏只记一次，够定位问题，也不把日志淹掉
 local supply_short_logged = {}
@@ -666,7 +666,7 @@ AddClassPostConstruct("widgets/redux/craftingmenu_ingredients", function(self)
         return
     end
 
-    -- 详情面板、固定栏悬停、材料图标里的子配方弹窗都构造这个类，一处覆盖三处
+    -- 详情面板、标记栏悬停、材料图标里的子配方弹窗都构造这个类，一处覆盖三处
     function self:SetRecipe(recipe, ...)
         if not ISR.IsCraftBorrowEnabled() or ISR._craft_supply == nil then
             return old_SetRecipe(self, recipe, ...)

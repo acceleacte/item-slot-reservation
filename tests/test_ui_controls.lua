@@ -45,14 +45,14 @@ assert_equal(ISR.Config.border_opacity, 0.6, "border opacity is read from the co
 
 -- 语言：设置项优先；没配或值非法时回落游戏语言（这里没有 LOC，即英文）
 assert_equal(ISR.Config.language, "zh", "language defaults to Chinese when the option is missing")
-assert_equal(ISR.GetText("PIN_MARK"), "固定此格", "Chinese hint text by default")
+assert_equal(ISR.GetText("PIN_MARK"), "标记此格", "Chinese hint text by default")
 assert_equal(ISR.GetText("CLEAR_MARK"), "清除", "Chinese clear hint by default")
 ISR.Config.language = "en"
 assert_equal(ISR.GetText("PIN_MARK"), "Pin this slot", "English hint text when the option says so")
 ISR.Config.language = "klingon"
 assert_equal(ISR.GetText("PIN_MARK"), "Pin this slot", "an unknown language falls back to the game locale")
 ISR.Config.language = "zh"
-assert_equal(ISR.GetText("PIN_MARK"), "固定此格", "switching back to Chinese works")
+assert_equal(ISR.GetText("PIN_MARK"), "标记此格", "switching back to Chinese works")
 
 assert_equal(ISR.GetSlotMouseIntent(GLOBAL.MOUSEBUTTON_LEFT), nil, "no pin key means no interception")
 pin_pressed = true
@@ -116,13 +116,13 @@ end
 
 assert(slot.OnControl ~= original_on_control, "ISR must intercept semantic control dispatch to swallow the click")
 
--- 不按固定键：一律放行
+-- 不按标记键：一律放行
 advance()
 assert_equal(slot:OnMouseButton(GLOBAL.MOUSEBUTTON_LEFT, true, 0, 0), false, "click without pin key is not consumed")
 assert_equal(pin_calls, 0, "click without pin key does not pin")
 assert_equal(original_mouse_calls, 1, "click without pin key reaches the original handler")
 
--- 按住固定键点有物品的格子：吞掉点击并固定
+-- 按住标记键点有物品的格子：吞掉点击并标记
 pin_pressed = true
 advance()
 assert_equal(slot:OnMouseButton(GLOBAL.MOUSEBUTTON_LEFT, true, 0, 0), true, "pin click is consumed")
@@ -141,7 +141,7 @@ assert_equal(pin_calls, 3, "second pin click pins once")
 assert_equal(slot:OnControl(GLOBAL.CONTROL_ACCEPT, true), true, "duplicate control event is consumed")
 assert_equal(pin_calls, 3, "duplicate control event must not pin twice")
 
--- 空格：固定无意义，放行给原版（这样才能正常拿起放下的逻辑）
+-- 空格：标记无意义，放行给原版（这样才能正常拿起放下的逻辑）
 slot_empty = true
 advance()
 assert_equal(slot:OnMouseButton(GLOBAL.MOUSEBUTTON_LEFT, true, 0, 0), false, "empty slot falls through")
@@ -162,7 +162,7 @@ advance()
 assert_equal(slot:OnMouseButton(GLOBAL.MOUSEBUTTON_LEFT, false, 0, 0), false, "key release is ignored")
 assert_equal(pin_calls, 3, "key release does not pin")
 
--- tooltip：按住固定键悬停时必须给出提示，且不被格子里物品自身的提示盖掉
+-- tooltip：按住标记键悬停时必须给出提示，且不被格子里物品自身的提示盖掉
 local function contains(text, needle)
     return text ~= nil and string.find(text, needle, 1, true) ~= nil
 end
@@ -194,27 +194,27 @@ assert_equal(slot:GetTooltip(), slot.tooltip, "slot tooltip must win over the it
 assert(contains(slot:GetTooltip(), ISR.GetText("PIN_MARK")), "hovering a slot with an item must offer pinning, got: "..tostring(slot:GetTooltip()))
 assert(not contains(slot:GetTooltip(), "("), "tooltip must not carry parenthesised item names")
 
--- 已固定同种物品：不再提示左键（这时左键是取消），只留「清除」
+-- 已标记同种物品：不再提示左键（这时左键是取消），只留「清除」
 current_mark = "grass"
 slot:OnUpdate(0)
 assert(contains(slot:GetTooltip(), ISR.GetText("CLEAR_MARK")), "pinned slot must offer clearing")
 assert(not contains(slot:GetTooltip(), ISR.GetText("PIN_MARK")), "pinned slot must not offer pinning again")
 assert(not contains(slot:GetTooltip(), "("), "tooltip must not carry parenthesised item names")
 
--- 已固定的空格：同样只给「清除」
+-- 已标记的空格：同样只给「清除」
 slot_empty = true
 current_mark = "grass"
 slot:OnUpdate(0)
 assert(contains(slot:GetTooltip(), ISR.GetText("CLEAR_MARK")), "pinned empty slot must offer clearing")
 assert(not contains(slot:GetTooltip(), "("), "tooltip must not carry parenthesised item names")
 
--- 空格未固定：什么都不提示，交回原版
+-- 空格未标记：什么都不提示，交回原版
 slot_empty = true
 current_mark = nil
 slot:OnUpdate(0)
 assert_equal(slot.tooltip, "grass", "unmarked empty slot keeps the game tooltip")
 
--- 松开固定键：接管立即撤销
+-- 松开标记键：接管立即撤销
 slot_empty = false
 current_mark = "grass"
 pin_pressed = false

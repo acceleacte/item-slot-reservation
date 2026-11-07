@@ -70,8 +70,8 @@ ISR.SlotDisplayControls =
 ISR.SLOT_INTENT_PIN = "pin_mark"
 ISR.SLOT_INTENT_CLEAR = "clear_mark"
 
--- 固定动作键两类语义：
---   键盘键 → 按住（可叠加修饰键）点左键=固定、右键=清除，老打法不变
+-- 标记动作键两类语义：
+--   键盘键 → 按住（可叠加修饰键）点左键=标记、右键=清除，老打法不变
 --   鼠标键 → 按住修饰键单击=切换（有标记则清除），左右键完全不参与
 ISR.PinKeys =
 {
@@ -154,7 +154,7 @@ function ISR.GetPinChord()
     return key, modifier
 end
 
--- 鼠标动作键走「切换」语义：同一个键既固定又清除
+-- 鼠标动作键走「切换」语义：同一个键既标记又清除
 function ISR.IsTogglePinKey()
     local key = ISR.GetPinChord()
     return ISR.PinMouseKeys[key] == true
@@ -178,7 +178,7 @@ ISR.ValidContainerRangeOptions =
 }
 
 -- 世界容器（基地箱子、无主切斯特）的标记归属：
---   shared    （默认）不记名，谁能打开这只容器谁就能固定 / 改 / 清，所有人都看得见；
+--   shared    （默认）不记名，谁能打开这只容器谁就能标记 / 改 / 清，所有人都看得见；
 --   exclusive 第一个在这只容器落标记的人独占，别人看不到也动不了
 ISR.ValidContainerSharingOptions =
 {
@@ -187,7 +187,7 @@ ISR.ValidContainerSharingOptions =
 }
 
 -- 世界容器的标记是否共享（配置项 container_sharing，默认 shared）
--- shared：容器不记名，谁能打开谁就能固定 / 改 / 清，所有人都看得见；
+-- shared：容器不记名，谁能打开谁就能标记 / 改 / 清，所有人都看得见；
 -- exclusive：退回「第一个在这只容器落标记的人独占」，别人看不到也动不了
 -- 配置缺失（测试桩、老存档、还没读 modinfo）时按共享处理
 -- 放在 env 里是因为 isr_slotmarks 也会用到，而部分测试桩只加载 env + 单个模块
@@ -273,7 +273,7 @@ function ISR.IsChineseLocale()
         or string.find(code, "chinese", 1, true) ~= nil
 end
 
--- 「语言」设置项的取值设置项本身的文案固定中文（modinfo 里的 label 由引擎当字符串渲染，
+-- 「语言」设置项的取值设置项本身的文案恒为中文（modinfo 里的 label 由引擎当字符串渲染，
 -- 没法按语言取表），所以这一项只决定游戏内提示文字（悬停提示、手势文案）用哪种语言
 ISR.ValidLanguageOptions =
 {
@@ -299,7 +299,7 @@ end
 
 ISR.Text =
 {
-    PIN_MARK = { en = "Pin this slot", zh = "固定此格" },
+    PIN_MARK = { en = "Pin this slot", zh = "标记此格" },
     CLEAR_MARK = { en = "Clear", zh = "清除" },
 }
 
@@ -351,7 +351,7 @@ function ISR.IsPinKeyDown()
         and input:IsKeyDown(keycode)
 end
 
--- 「现在是否按住了固定手势」：悬停提示与拦截共用
+-- 「现在是否按住了标记手势」：悬停提示与拦截共用
 -- 鼠标动作键看修饰键；键盘动作键只看它自己
 function ISR.IsPinKeyPressed()
     local key = ISR.GetPinChord()
@@ -366,7 +366,7 @@ function ISR.IsPinKeyPressed()
     return ISR.IsPinKeyDown()
 end
 
--- 唯一的接管条件：按住固定手势并点击格子
+-- 唯一的接管条件：按住标记手势并点击格子
 -- 鼠标动作键（中键/右键）：必须叠加修饰键（默认 Shift），单击即切换；
 --   左/右键一律放行给原版 —— Shift+左键是原版快速转移，不能吞
 -- 键盘动作键（V…L）：本身已足够明确，不再要求修饰键

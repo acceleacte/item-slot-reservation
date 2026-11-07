@@ -62,7 +62,7 @@ local function GetSlotItemPrefab(slot)
     return item ~= nil and item.prefab or nil
 end
 
--- 只在按住固定键悬停时接管 tooltip，其余时刻原样还给游戏
+-- 只在按住标记键悬停时接管 tooltip，其余时刻原样还给游戏
 -- 文案只要动作，不带物品名和括号：格子本身已经显示物品，重复没有信息量
 local function BuildSlotTooltip(slot)
     if slot == nil or not slot.focus then
@@ -80,7 +80,7 @@ local function BuildSlotTooltip(slot)
     local pin_label = ISR.GetPinChordLabel(ISR.SLOT_INTENT_PIN) or ""
     local clear_label = ISR.GetPinChordLabel(ISR.SLOT_INTENT_CLEAR) or ""
 
-    -- 已固定的格子不再提示固定键（该键在此是取消），只留清除
+    -- 已标记的格子不再提示标记键（该键在此是取消），只留清除
     if mark == nil and GetSlotItemPrefab(slot) ~= nil then
         table.insert(lines, pin_label..": "..ISR.GetText("PIN_MARK"))
     end
@@ -152,9 +152,9 @@ AddClassPostConstruct("widgets/invslot", function(self)
             return false
         end
 
-        -- 固定：点已有物品的格子，把该格固定给这种物品
+        -- 标记：点已有物品的格子，把该格标记给这种物品
         if intent == ISR.SLOT_INTENT_PIN then
-            -- 切换模式（Shift+中键）下，已固定的格子直接清除，不要求格中仍是同一种物品：
+            -- 切换模式（Shift+中键）下，已标记的格子直接清除，不要求格中仍是同一种物品：
             -- 中键只有一个动作，玩家没法再分左右键
             if ISR.IsTogglePinKey() and ISR.GetClientSlotMark(slot) ~= nil then
                 ISR.Log("InvSlot toggle clear", "slot", tostring(slot.num))
@@ -252,7 +252,7 @@ AddClassPostConstruct("widgets/invslot", function(self)
 
     -- 格子里有物品时，物品图（self.tile）是 self 的子 widget：Widget:GetTooltip
     -- 先遍历子 widget 再取 self.tooltip，物品自己的提示会盖掉我们写的串
-    -- 按住固定键期间直接接管返回值，让提示稳定显示在按住的全过程
+    -- 按住标记键期间直接接管返回值，让提示稳定显示在按住的全过程
     local old_GetTooltip = self.GetTooltip
     function self:GetTooltip()
         if self._isr_tooltip_override ~= nil then

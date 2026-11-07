@@ -77,7 +77,7 @@ container.GetItemInSlot = function(_, num) return num == 3 and slot_item or nil 
 local slot = { num = 3, container = container, focus = true }
 local function ClientMark() return player._item_slot_reservation_client_marks["1:3"] end
 
--- 固定：客户端只发请求，不预写本地标记 -----------------------------------------
+-- 标记：客户端只发请求，不预写本地标记 -----------------------------------------
 -- 预写就是「闪一下」的来源：没权限时先画框再被服务端擦掉这里锁死这个行为
 assert_equal(ISR.PinClientSlotMark(slot), true, "pinning an occupied slot sends a request")
 assert_equal(ClientMark(), nil, "the client does not paint before the server confirms")
@@ -93,7 +93,7 @@ assert_equal(ClientMark(), "grass", "the mark lands after the server confirms")
 ISR.ApplySyncedClientSlotMark(container.inst, 3, nil)
 assert_equal(ClientMark(), nil, "a rejection clears nothing because nothing was painted")
 
--- 再次固定同一格 -> 取消（客户端此刻已知道这一格有标记）
+-- 再次标记同一格 -> 取消（客户端此刻已知道这一格有标记）
 ISR.ApplySyncedClientSlotMark(container.inst, 3, "grass")
 assert_equal(ISR.PinClientSlotMark(slot), true, "pinning the same slot again toggles the mark off")
 assert_equal(ClientMark(), "grass", "toggling off waits for the server too")
@@ -101,14 +101,14 @@ assert_equal(sent_rpcs[#sent_rpcs].prefab, "", "the toggle-off request sends an 
 ISR.ApplySyncedClientSlotMark(container.inst, 3, nil)
 assert_equal(ClientMark(), nil, "the mark is gone after the server confirms the clear")
 
--- 换成树枝后固定 -> 覆盖
+-- 换成树枝后标记 -> 覆盖
 slot_item = { prefab = "twigs" }
 assert_equal(ISR.PinClientSlotMark(slot), true, "pinning after swapping the item succeeds")
 assert_equal(sent_rpcs[#sent_rpcs].prefab, "twigs", "pin follows the current item in the slot")
 ISR.ApplySyncedClientSlotMark(container.inst, 3, "twigs")
 assert_equal(ClientMark(), "twigs", "the new prefab lands after confirmation")
 
--- 空格不能固定
+-- 空格不能标记
 local empty_slot = { num = 4, container = container, focus = false }
 assert_equal(ISR.PinClientSlotMark(empty_slot), false, "empty slot cannot be pinned")
 
@@ -117,7 +117,7 @@ slot_item = { prefab = "Grass.TEX" }
 assert_equal(ISR.PinClientSlotMark(slot), true, "prefab with suffix is pinned")
 assert_equal(sent_rpcs[#sent_rpcs].prefab, "grass", "pinned key is normalized")
 
--- 按键意图：只有按住固定键才接管 -----------------------------------------------
+-- 按键意图：只有按住标记键才接管 -----------------------------------------------
 local pin_pressed = false
 runtime_global.TheInput =
 {

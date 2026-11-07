@@ -2,13 +2,29 @@
 
 Item Slot Reservation（物品格预留）· 工坊 ID `3830575143`
 
-版本号按字符串比较决定工坊是否提示更新，`0.1.82` 高于 `0.1.81`
+版本号按字符串比较决定工坊是否提示更新，`0.1.9` 高于 `0.1.83`
 
-未发布期间所有改动合并进同一个待发布号；一次发布只递增一位，不跳号（`0.1.7` → `0.1.8`）
+未发布期间所有改动合并进同一个待发布号；一次发布只递增一位，不跳号（`0.1.7` → `0.1.8`）。两位数尾号收尾后按用户指定回到一位（`0.1.83` → `0.1.9`）
 
 ---
 
-## 0.1.83 — 2026-11-05
+## 0.1.9 — 2026-11-08
+
+**本版主题：容器形态与「打开状态」的完整兼容**
+
+0.1 系列只管得住「站在旁边、关着的容器」。本版把三类长期盲区一次补齐：切斯特的三种形态（普通 / 雪 / 暗影）、WX-78 拓展储物箱这类物品栏内容器、以及容器正被打开时的合成判定。共 6 个修复 + 1 项外观默认值调整，**不改存档结构**，老存档直接可用。
+
+**术语调整**：本版起统一把「固定」称作**标记**（标记格 / 标记键 / 标记手势），与日志、代码里的 `mark` 对齐。功能没有任何变化；旧文档、工坊历史说明里的「预留」指同一件事，本次保留不动。设置项的显示名变了，但存档里存的是配置值（如 `pin_key = MIDDLE`），老玩家升级后原有设置不会重置。
+
+| # | 问题 | 玩家看到的症状 |
+|---|---|---|
+| 1 | 切斯特没带眼骨（不跟随任何人）时标记推不回客户端 | 点格子没反应，木框不出现，物品也不回位 |
+| 2 | WX-78 拓展储物箱里的标记格不参与借料 | 合成面板不显示箱子里的材料 |
+| 3 | 切斯特升级成暗影切斯特后借料、归位全断 | 升级后标记格失效 |
+| 4 | 打开暗影切斯特时配方整片变灰 | 开着容器不能合成，关掉才行 |
+| 5 | 暗影切斯特的标记全部判成超距 | 东西扔不进标记格，一律掉地上 |
+| 6 | 标记只写容器的一副面孔 | 打开和关掉看到两种状态 |
+| 7 | 木框默认透明度 100% → 60% | 新订阅者看到的框更淡 |
 
 **修复：切斯特没眼骨跟随时标记能写进去、客户端却收不到（点了没反应）**
 
@@ -20,22 +36,22 @@ Item Slot Reservation（物品格预留）· 工坊 ID `3830575143`
 
 **修复：WX-78 拓展储物箱（以及其他随身容器）不能借料合成**
 
-- 现象：机器人的拓展储物箱里固定的材料不参与借料合成
+- 现象：机器人的拓展储物箱里标记的材料不参与借料合成
 - 根因：借料供应把「随身容器」整类排掉了（`IsStorageCarriedByPlayer`），理由是「原版 overflow 已算」。实际上原版 `Inventory:Has` 的 overflow 只认**装备栏 BODY 背包**（`GetOverflowContainer()`），物品栏里锁着的 `wx78_inventorycontainer`、背包里的桶都不在原版统计范围内
 - 修法：排除条件改为与原版三处精确对齐 —— 玩家自己、`GetOverflowContainer()` 返回的那只、玩家正打开的容器；其余随身容器进供应。另加 `canbeopened == false` 排除（打不开就取不出来）
 - 测试：`tests/test_crafting.lua` 补「物品栏里的容器算供应」「BODY 背包不重复计入」两条
 
 **修复：切斯特升级成暗影切斯特后借料合成失效**
 
-- 现象：喂 9 个噩梦燃料把切斯特变成暗影切斯特后，固定格里的材料不再参与借料合成；标记框也可能对不上
-- 根因：原版 `chester.lua` 的 `SwitchToShadowContainerProxy` 会把切斯特的 `container` 组件整个 `RemoveComponent` 掉，物品搬进 `TheWorld:GetPocketDimensionContainer("shadow")`，实体上只剩 `container_proxy`（读档时 `OnLoadPostPass` 还会再切一次）。ISR 到处只认 `components.container`，于是借料、自动归位、共享容器判定全部拿不到容器；标记本身还留在切斯特实体上（存档已验证：`isr_slotmarkstore` 里有 `nightmarefuel` 固定在 9 格）
+- 现象：喂 9 个噩梦燃料把切斯特变成暗影切斯特后，标记格里的材料不再参与借料合成；标记框也可能对不上
+- 根因：原版 `chester.lua` 的 `SwitchToShadowContainerProxy` 会把切斯特的 `container` 组件整个 `RemoveComponent` 掉，物品搬进 `TheWorld:GetPocketDimensionContainer("shadow")`，实体上只剩 `container_proxy`（读档时 `OnLoadPostPass` 还会再切一次）。ISR 到处只认 `components.container`，于是借料、自动归位、共享容器判定全部拿不到容器；标记本身还留在切斯特实体上（存档已验证：`isr_slotmarkstore` 里有 `nightmarefuel` 标记在 9 格）
 - 修法：新增 `ISR.GetContainerComponent`，`container_proxy` 顺着 `GetMaster()` 解引用到真容器；存储适配器按外层实体还原 GUID；距离改用代理所有者（切斯特）而不是口袋维度实体；同一物理格被两套标记指向时按真容器 GUID + 格号去重，避免材料算两遍；清除一侧时连带清另一侧同格，避免「框擦了还在借料」
 - 雪切斯特（9 个蓝宝石）走 `SwitchToContainer`，实体上就是普通 `container` 组件，无需额外适配，本版一并加了回归用例
 - 测试：新增 `tests/test_proxy_chester.lua`（36 个用例）
 
 **修复：打开暗影切斯特时配方整片变灰，关掉才亮**
 
-- 现象：打开暗影切斯特，合成栏里用到固定格材料的配方全部变灰；把容器关掉，同一批配方立刻亮
+- 现象：打开暗影切斯特，合成栏里用到标记格材料的配方全部变灰；把容器关掉，同一批配方立刻亮
 - 日志证据：`client_log.txt` 里容器的 cutgrass 从 supply 消失的同一秒出现 `Craft supply short cutgrass have 0 supply 0 need 1`，两秒后 supply 恢复 `cutgrass:99`；服务端 `Craft supply synced` 在开关之间来回跳
 - 根因：给客户端的供应与服务端共用一份口径，两边都把「正被玩家打开的容器」排除了，理由是原版 `opencontainers` 已经算过。服务端确实算得到，客户端不算 —— 口袋维度容器是 `entity:Hide()` 的 CLASSIFIED 实体，客户端 `GetOpenContainers()` 用 `entity:IsVisible()` 过滤，永远拿不到，`inventory:Has(..., true)` 给 0
 - 修法：供应拆两个口径。服务端扣料维持「排除所有打开容器」（原版已把它们填进 materials，再填一次就是重复扣料）；推给客户端的 `ComputeCraftSupply(player, true)` 把打开容器全收进来，再由客户端 `HasIngredientsWithClientSupply` 扣掉「自己已经数到的打开容器部分」（`CountCountedOpenContainerItems`，遍历与过滤条件照抄原版 `inventory_classified:Has`）。服务端猜不出哪台客户端数得到（口袋维度实体 `entity:Hide()`、WX 储物箱锁在物品栏格、多人共开时 `SetClassifiedTarget(nil)`），不在服务端做减法
@@ -43,7 +59,7 @@ Item Slot Reservation（物品格预留）· 工坊 ID `3830575143`
 
 **修复：暗影切斯特的标记全部判成 :range，物品进不了格子**
 
-- 现象：往暗影切斯特的固定格扔东西一律进不去（`Marked placement no hit ... skipped <guid>@<slot>:range`），借料同时为空；同一批标记时而命中时而 `:target`
+- 现象：往暗影切斯特的标记格扔东西一律进不去（`Marked placement no hit ... skipped <guid>@<slot>:range`），借料同时为空；同一批标记时而命中时而 `:target`
 - 根因两条：
   1. `GetProxyOwner`（口袋维度实体 → 切斯特）只在「带标记的容器注册表」里反查。容器没标记时不在注册表，反查失败 → 距离按口袋维度实体的坐标（0,0,0）算 → 永远超距
   2. `GetGUID` 依赖 `container._isr_owner_inst`，谁最后访问谁改写：从切斯特取是切斯特 GUID、从口袋实体取又变回口袋 GUID → `Marked placement` 的目标匹配随机失败

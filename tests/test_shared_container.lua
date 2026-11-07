@@ -1,9 +1,9 @@
 -- 共享世界容器（0.1.8，标记不记名）
 --
 -- 用户指定（2026-11-04）：
---   * 容器独立且不记名 —— 谁打开谁都能固定、改、清
+--   * 容器独立且不记名 —— 谁打开谁都能标记、改、清
 --   * B 要看到 A 的框
---   * B 拾取物品要回到箱子里固定的格，即使是 A 固定的
+--   * B 拾取物品要回到箱子里标记的格，即使是 A 标记的
 --
 -- 这里用真实的 isr_storage + isr_slotmarks 跑，只桩掉环境依赖
 
@@ -143,7 +143,7 @@ local marks_for_alice = ISR.GetServerMarks(alice)
 assert_equal(marks_for_alice[ISR.GetSlotKey(chest.GUID, 2)].prefab, "log", "the chest mark shows for alice too")
 assert_equal(marks_for_alice[ISR.GetSlotKey(backpack.GUID, 1)].prefab, "twigs", "alice keeps her own backpack marks")
 
--- B 拾取物品要回 A 固定的格：路由查的是同一份标记表 ----------------------------
+-- B 拾取物品要回 A 标记的格：路由查的是同一份标记表 ----------------------------
 local sorted = ISR.GetSortedServerMarksForPrefab(bob, "log")
 assert_equal(#sorted, 1, "bob routes logs into the chest slot alice pinned")
 assert_equal(sorted[1].slot, 2, "the routed slot is the one alice pinned")

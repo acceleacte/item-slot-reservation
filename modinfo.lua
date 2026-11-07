@@ -1,25 +1,25 @@
 name = "Item Slot Reservation[beta]"
 description = [[
-按Shift + 鼠标中键 把储物格固定给指定物品
-基本能放进物品栏的都能固定：如材料、武器、工具、帽子、护符等
+按Shift + 鼠标中键 把储物格标记给指定物品
+基本能放进物品栏的都能标记：如材料、武器、工具、帽子、护符等
 
-固定之后：
-- 该物品被拾取、制作完成、或从装备栏卸下时，自动回到固定的格子
+标记之后：
+- 该物品被拾取、制作完成、或从装备栏卸下时，自动回到标记的格子
 - 其它物品不会占用这一格；格子被手动塞进别的东西时，预留会自动解除
 - 只能放物品栏的物品（以太余烬、沃拓克斯灵魂）在物品栏满时不受预留限制
 - 快速转移只落进未预留的格、或该物品自己的预留格；物品栏没有可落点时直接进背包
-- 世界容器（基地箱子、切斯特）的固定格多人共用：谁能打开就能固定/改/清，别人的标记同样可见、拾取时同样回位
+- 世界容器（基地箱子、切斯特）的标记格多人共用：谁能打开就能标记/改/清，别人的标记同样可见、拾取时同样回位
 
 测试内容(默认关闭）：
 - 支持世界容器（如：基地箱子、跟随中的切斯特）和随身容器
 - 世界里的容器只有在身边时才接收物品
-- 合成借料：开启后合成会自动借用箱子里固定格里的材料参与合成，作用距离同上
+- 合成借料：开启后合成会自动借用箱子里标记格里的材料参与合成，作用距离同上
 
 历史更新日志请前往创意工坊页面查看；如果遇到问题请及时留言反馈
 并且可以在模组设置中关闭测试版内容以(尝试)解决问题
 ]]
 author = "acceleacte"
-version = "0.1.83"
+version = "0.1.9"
 api_version = 10
 dst_compatible = true
 dont_starve_compatible = false
@@ -62,20 +62,20 @@ configuration_options =
     {
         name = "pin_modifier",
         label = "修饰键",
-        hover = "仅当固定键是鼠标键时生效；\n选「无」表示不用修饰键",
+        hover = "仅当标记键是鼠标键时生效；\n选「无」表示不用修饰键",
         options =
         {
-            { description = "Shift", data = "SHIFT", hover = "Shift + 固定键切换标记" },
-            { description = "Ctrl", data = "CTRL", hover = "Ctrl + 固定键切换标记" },
-            { description = "Alt", data = "ALT", hover = "Alt + 固定键切换标记" },
-            { description = "无", data = "NONE", hover = "固定键单独按下即切换" },
+            { description = "Shift", data = "SHIFT", hover = "Shift + 标记键切换标记" },
+            { description = "Ctrl", data = "CTRL", hover = "Ctrl + 标记键切换标记" },
+            { description = "Alt", data = "ALT", hover = "Alt + 标记键切换标记" },
+            { description = "无", data = "NONE", hover = "标记键单独按下即切换" },
         },
         default = "SHIFT",
     },
     {
         name = "pin_key",
-        label = "固定键",
-        hover = "键盘键：按住后左键固定、右键清除\n中键 / 右键：需与修饰键一起按",
+        label = "标记键",
+        hover = "键盘键：按住后左键标记、右键清除\n中键 / 右键：需与修饰键一起按",
         options =
         {
             { description = "中键", data = "MIDDLE", hover = "与修饰键使用" },
@@ -94,7 +94,7 @@ configuration_options =
             { description = "J", data = "J" },
             { description = "K", data = "K" },
             { description = "L", data = "L" },
-            { description = "无", data = "NONE", hover = "关闭固定手势" },
+            { description = "无", data = "NONE", hover = "关闭标记手势" },
         },
         default = "MIDDLE",
     },
@@ -131,11 +131,11 @@ configuration_options =
     Section("section_container", "测试内容"),
     {
         name = "container_sharing",
-        label = "世界容器固定格",
-        hover = "箱子、切斯特的固定格由谁使用\n共享：看到就能改 / 独占：只有标记者",
+        label = "世界容器标记格",
+        hover = "箱子、切斯特的标记格由谁使用\n共享：看到就能改 / 独占：只有标记者",
         options =
         {
-            { description = "共享(推荐)", data = "shared", hover = "谁能打开谁就能固定、改、清" },
+            { description = "共享(推荐)", data = "shared", hover = "谁能打开谁就能标记、改、清" },
             { description = "独占", data = "exclusive", hover = "只有第一个标记的人能用" },
         },
         default = "shared",
@@ -143,11 +143,11 @@ configuration_options =
     {
         name = "pickup_to_container",
         label = "拾取后放回容器",
-        hover = "开启：拾取物直接进箱子等世界容器的固定格\n关闭：只有物品栏和随身容器的固定格接收",
+        hover = "开启：拾取物直接进箱子等世界容器的标记格\n关闭：只有物品栏和随身容器的标记格接收",
         options =
         {
-            { description = "开启", data = true, hover = "世界容器的固定格也接收拾取物" },
-            { description = "关闭", data = false, hover = "只有物品栏和随身容器的固定格接收" },
+            { description = "开启", data = true, hover = "世界容器的标记格也接收拾取物" },
+            { description = "关闭", data = false, hover = "只有物品栏和随身容器的标记格接收" },
         },
         default = false,
     },
@@ -166,11 +166,11 @@ configuration_options =
     {
         name = "craft_from_container",
         label = "合成借料",
-        hover = "固定后无需打开箱子可使用内部材料参与合成\n可能与部分模组冲突，异常时优先关闭排查",
+        hover = "标记后无需打开箱子可使用内部材料参与合成\n可能与部分模组冲突，异常时优先关闭排查",
         options =
         {
             { description = "关闭", data = false, hover = "只用物品栏和已打开的容器合成" },
-            { description = "开启", data = true, hover = "借用容器里已固定的材料合成" },
+            { description = "开启", data = true, hover = "借用容器里已标记的材料合成" },
         },
         default = false,
     },

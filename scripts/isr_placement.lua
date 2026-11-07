@@ -123,7 +123,7 @@ local function IsOwnInventoryMark(owner, mark)
     return owner ~= nil and mark.container_guid == owner.GUID
 end
 
--- 玩家身上的容器（背包、克朗普斯袋子、背包里的桶）：里面的固定格永远参与自动回位，
+-- 玩家身上的容器（背包、克朗普斯袋子、背包里的桶）：里面的标记格永远参与自动回位，
 -- 不受 pickup_to_container 影响开关只决定「世界里的容器」（切斯特、基地箱子）算不算
 local function IsCarriedContainerMark(owner, mark)
     return ISR.IsStorageCarriedByPlayer ~= nil
@@ -131,7 +131,7 @@ local function IsCarriedContainerMark(owner, mark)
 end
 
 -- 「拾取后直接放回容器」开着时，容器里的标记优先；关掉时只留玩家身上的容器，
--- 世界里的容器（切斯特、箱子）不参与，物品照常回玩家物品栏的固定格
+-- 世界里的容器（切斯特、箱子）不参与，物品照常回玩家物品栏的标记格
 local function OrderMarksForConfig(owner, marks)
     local wants_container = ISR.Config == nil or ISR.Config.pickup_to_container ~= false
     local container_marks = {}
@@ -154,7 +154,7 @@ local function OrderMarksForConfig(owner, marks)
     return ordered
 end
 
--- 固定格里已经有同种物品的未满堆叠时也要认：草、树枝这类资源采集后应当并进去，
+-- 标记格里已经有同种物品的未满堆叠时也要认：草、树枝这类资源采集后应当并进去，
 -- 只判「空不空」会把它推回物品栏（容器没打开时尤其明显）
 local function CanPlaceIntoMarkedSlot(adapter, storage, item, slot, context)
     if adapter.CanUseSlot ~= nil then
